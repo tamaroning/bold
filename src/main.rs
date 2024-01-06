@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use elf::{
     endian::AnyEndian, file::Elf64_Ehdr, section::SectionHeader, symbol::Symbol as ElfSymbolData,
@@ -6,17 +6,76 @@ use elf::{
 };
 use log::info;
 
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+struct ObjectFileId {
+    private: usize,
+}
+
+fn get_next_object_file_id() -> ObjectFileId {
+    static mut OBJECT_FILE_ID: usize = 0;
+    let id = unsafe { OBJECT_FILE_ID };
+    unsafe { OBJECT_FILE_ID += 1 };
+    ObjectFileId { private: id }
+}
+
+struct Context {
+    file_pool: HashMap<ObjectFileId, Rc<RefCell<ObjectFile>>>,
+}
+
+impl Context {
+    fn new(files: Vec<ObjectFile>) -> Context {
+        Context {
+            file_pool: files
+                .into_iter()
+                .map(|f| (get_next_object_file_id(), Rc::new(RefCell::new(f))))
+                .collect(),
+        }
+    }
+
+    fn get_file(&self, id: ObjectFileId) -> Option<Rc<RefCell<ObjectFile>>> {
+        self.file_pool.get(&id).map(Rc::clone)
+    }
+
+    fn resovle_symbols(&mut self) {
+        for (id, file) in self.file_pool.iter() {
+            file.borrow_mut().register_defined_symbols(*id);
+            file.borrow_mut().register_undefined_symbols();
+        }
+    }
+
+    fn dump_symbols(&self) {
+        for file in self.file_pool.values() {
+            let file = file.borrow();
+            log::info!("Symbols in {}", file.file_name);
+            for symbol in file.symbols.iter() {
+                if let Some(symbol) = symbol {
+                    let definiton_loc = if let Some(file_id) = symbol.file {
+                        let file = self.get_file(file_id).unwrap();
+                        let file = file.borrow();
+                        file.get_file_name().to_owned()
+                    } else {
+                        "UNDEFINED".to_owned()
+                    };
+                    log::info!("\t\"{}\" ({})", symbol.name, definiton_loc);
+                }
+            }
+        }
+    }
+}
+
 struct ObjectFile {
-    filename: String,
+    file_name: String,
+    // TODO: archive file
     data: Vec<u8>,
 
     // Elf sections and symbols
     elf_symtab: SectionHeader,
+    first_global: usize,
     elf_sections: Vec<Rc<ElfSection>>,
     elf_symbols: Vec<ElfSymbol>,
 
     input_sections: Vec<Option<InputSection>>,
-    symbols: Vec<Option<ElfSymbol>>,
+    symbols: Vec<Option<Symbol>>,
 }
 
 macro_rules! dummy {
@@ -26,18 +85,23 @@ macro_rules! dummy {
 }
 
 impl ObjectFile {
-    fn read_from(filename: String) -> ObjectFile {
+    fn read_from(file_name: String) -> ObjectFile {
         // TODO: use mmap
-        let data = std::fs::read(filename.clone()).unwrap();
+        let data = std::fs::read(file_name.clone()).unwrap();
         ObjectFile {
-            filename,
+            file_name,
             data,
             elf_symtab: dummy!(SectionHeader),
+            first_global: 0,
             elf_sections: Vec::new(),
             elf_symbols: Vec::new(),
             input_sections: Vec::new(),
             symbols: Vec::new(),
         }
+    }
+
+    fn get_file_name(&self) -> &str {
+        &self.file_name
     }
 
     fn parse(&mut self) {
@@ -61,7 +125,7 @@ impl ObjectFile {
         let (symtab_sec, strtab_sec) = file.symbol_table().unwrap().unwrap();
         // TODO: Use .dsymtab instead of .symtab for dso
         let symtab_shdr = file.section_header_by_name(".symtab").unwrap().unwrap();
-        for (i, sym) in symtab_sec.into_iter().enumerate() {
+        for sym in symtab_sec {
             let name = strtab_sec.get(sym.st_name as usize).unwrap();
             self.elf_symbols.push(ElfSymbol {
                 name: name.to_string(),
@@ -70,6 +134,7 @@ impl ObjectFile {
         }
 
         self.elf_symtab = symtab_shdr;
+        self.first_global = symtab_shdr.sh_info as usize;
 
         self.initialize_sections();
         self.initialize_symbols();
@@ -103,16 +168,44 @@ impl ObjectFile {
         self.symbols.resize(self.elf_symbols.len(), None);
         for (i, elf_symbol) in self.elf_symbols.iter().enumerate() {
             // Skip until reaching the first global
-            if i < self.elf_symtab.sh_info as usize {
+            if i < self.first_global as usize {
                 continue;
             }
-            self.symbols[i] = Some(elf_symbol.clone());
+            self.symbols[i] = Some(Symbol {
+                name: elf_symbol.name.clone(),
+                file: None,
+            });
         }
     }
 
-    fn register_defined_symbols(&mut self) {}
+    fn register_defined_symbols(&mut self, this_file_id: ObjectFileId) {
+        for (i, symbol) in self.symbols.iter_mut().enumerate() {
+            let esym = &self.elf_symbols[i];
+            if esym.sym.is_undefined() {
+                continue;
+            }
+            let Some(symbol) = symbol else {
+                continue;
+            };
 
-    fn register_undefined_symbols(&mut self) {}
+            symbol.file = Some(this_file_id);
+            // TODO: visibility
+        }
+    }
+
+    fn register_undefined_symbols(&mut self) {
+        for (i, symbol) in self.symbols.iter().enumerate() {
+            let esym = &self.elf_symbols[i];
+            if esym.sym.is_undefined() {
+                continue;
+            }
+            let Some(symbol) = symbol else {
+                continue;
+            };
+
+            // TODO: register undefined symbols in symbol.file
+        }
+    }
 }
 
 struct ElfSection {
@@ -142,6 +235,12 @@ impl std::fmt::Debug for ElfSymbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Symbol").field("name", &self.name).finish()
     }
+}
+
+#[derive(Debug, Clone)]
+struct Symbol {
+    name: String,
+    file: Option<ObjectFileId>,
 }
 
 trait OutputChunk {
@@ -189,21 +288,23 @@ fn main() {
         .map(|arg| ObjectFile::read_from(arg.clone()))
         .collect::<Vec<_>>();
 
-    files.iter_mut().for_each(|file| {
-        info!("Parsing {}", file.filename);
+    for file in files.iter_mut() {
+        info!("Parsing {}", file.file_name);
         file.parse();
         dbg!(&file.elf_sections);
         dbg!(&file.elf_symbols);
         dbg!(&file.input_sections);
-        dbg!(&file.symbols);
-    });
+    }
 
     // Set priorities to files
     // What is this?
 
-    // Register defined symbols
+    let mut ctx = Context::new(files);
 
-    // Register undefined symbols
+    // Register (un)defined symbols
+    ctx.resovle_symbols();
+
+    ctx.dump_symbols();
 
     // Eliminate unused archive members
     // What is this?
