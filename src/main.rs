@@ -43,10 +43,35 @@ impl Context {
         }
     }
 
+    fn dump(&self) {
+        self.dump_sections();
+        self.dump_symbols();
+    }
+
+    fn dump_sections(&self) {
+        for file in self.file_pool.values() {
+            let file = file.borrow();
+            log::debug!("Sections in {}", file.file_name);
+            for (elf_section, input_section) in
+                file.elf_sections.iter().zip(file.input_sections.iter())
+            {
+                log::debug!(
+                    "\t{:?} {}",
+                    elf_section.name,
+                    (if input_section.is_some() {
+                        "(InputSection)"
+                    } else {
+                        ""
+                    })
+                );
+            }
+        }
+    }
+
     fn dump_symbols(&self) {
         for file in self.file_pool.values() {
             let file = file.borrow();
-            log::info!("Symbols in {}", file.file_name);
+            log::debug!("Symbols in {}", file.file_name);
             for symbol in file.symbols.iter() {
                 if let Some(symbol) = symbol {
                     let definiton_loc = if let Some(file_id) = symbol.file {
@@ -56,7 +81,7 @@ impl Context {
                     } else {
                         "UNDEFINED".to_owned()
                     };
-                    log::info!("\t\"{}\" ({})", symbol.name, definiton_loc);
+                    log::debug!("\t\"{}\" ({})", symbol.name, definiton_loc);
                 }
             }
         }
@@ -194,8 +219,7 @@ impl ObjectFile {
     }
 
     fn register_undefined_symbols(&mut self) {
-        for (i, symbol) in self.symbols.iter().enumerate() {
-            let esym = &self.elf_symbols[i];
+        for (esym, symbol) in self.elf_symbols.iter().zip(self.symbols.iter()) {
             if esym.sym.is_undefined() {
                 continue;
             }
@@ -203,7 +227,7 @@ impl ObjectFile {
                 continue;
             };
 
-            // TODO: register undefined symbols in symbol.file
+            // TODO: do something for an archive file
         }
     }
 }
@@ -291,9 +315,6 @@ fn main() {
     for file in files.iter_mut() {
         info!("Parsing {}", file.file_name);
         file.parse();
-        dbg!(&file.elf_sections);
-        dbg!(&file.elf_symbols);
-        dbg!(&file.input_sections);
     }
 
     // Set priorities to files
@@ -304,7 +325,7 @@ fn main() {
     // Register (un)defined symbols
     ctx.resovle_symbols();
 
-    ctx.dump_symbols();
+    ctx.dump();
 
     // Eliminate unused archive members
     // What is this?
