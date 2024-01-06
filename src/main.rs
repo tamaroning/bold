@@ -8,7 +8,6 @@ use elf::{
     endian::AnyEndian, file::Elf64_Ehdr, section::SectionHeader, symbol::Symbol as ElfSymbolData,
     ElfBytes,
 };
-use log::info;
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 struct ObjectId {
@@ -119,7 +118,7 @@ macro_rules! dummy {
 
 impl ObjectFile {
     fn read_from(file_name: String) -> ObjectFile {
-        // TODO: use mmap
+        // TODO: We should use mmap here
         let data = std::fs::read(file_name.clone()).unwrap();
         ObjectFile {
             file_name,
@@ -255,6 +254,7 @@ impl std::fmt::Debug for ElfSection {
 struct InputSection {
     elf_section: Arc<ElfSection>,
     output_section: Arc<RwLock<OutputSection>>,
+    offset: Option<usize>,
 }
 
 impl InputSection {
@@ -263,7 +263,20 @@ impl InputSection {
         InputSection {
             elf_section,
             output_section,
+            offset: None,
         }
+    }
+
+    fn get_size(&self) -> usize {
+        self.elf_section.data.len()
+    }
+
+    fn get_offset(&self) -> usize {
+        self.offset.unwrap()
+    }
+
+    fn set_offset(&mut self, offset: usize) {
+        self.offset = Some(offset);
     }
 }
 
@@ -288,9 +301,11 @@ struct Symbol {
 trait OutputChunk {
     fn get_size(&self) -> usize;
     fn get_offset(&self) -> usize;
+    /// Set size and offset
     fn set_offset(&mut self, offset: usize);
     fn copy_to(&self, buf: &mut [u8]);
     fn relocate(&mut self, relocs: &[u8]);
+    fn as_string(&self) -> String;
 }
 
 struct OutputEhdr {
@@ -315,14 +330,30 @@ impl OutputChunk for OutputEhdr {
     fn relocate(&mut self, relocs: &[u8]) {
         todo!()
     }
+
+    fn as_string(&self) -> String {
+        format!("OutputEhdr")
+    }
 }
 
 #[derive(Debug, Clone)]
 struct OutputSection {
     name: String,
+    sections: Vec<Arc<RwLock<InputSection>>>,
+    offset: usize,
+    size: usize,
 }
 
 impl OutputSection {
+    fn new(name: String) -> OutputSection {
+        OutputSection {
+            name,
+            sections: vec![],
+            offset: 0,
+            size: 0,
+        }
+    }
+
     fn from_section_name(section_name: &String) -> Arc<RwLock<OutputSection>> {
         const COMMON_SECTION_NAMES: [&str; 12] = [
             ".text",
@@ -342,9 +373,7 @@ impl OutputSection {
         let common_sections = COMMON_SECTIONS.get_or_init(|| {
             COMMON_SECTION_NAMES
                 .iter()
-                .map(|name| OutputSection {
-                    name: name.to_string(),
-                })
+                .map(|name| OutputSection::new(name.to_string()))
                 .map(RwLock::new)
                 .map(Arc::new)
                 .collect()
@@ -364,15 +393,22 @@ impl OutputSection {
 
 impl OutputChunk for OutputSection {
     fn get_size(&self) -> usize {
-        todo!()
+        self.size
     }
 
     fn get_offset(&self) -> usize {
-        todo!()
+        self.offset
     }
 
-    fn set_offset(&mut self, offset: usize) {
-        todo!()
+    fn set_offset(&mut self, mut offset: usize) {
+        let offset_start = offset;
+        self.offset = offset;
+        for input_section in self.sections.iter() {
+            let mut input_section = input_section.write().unwrap();
+            input_section.set_offset(offset);
+            offset += input_section.get_size();
+        }
+        self.size = offset - offset_start;
     }
 
     fn copy_to(&self, buf: &mut [u8]) {
@@ -381,6 +417,19 @@ impl OutputChunk for OutputSection {
 
     fn relocate(&mut self, relocs: &[u8]) {
         todo!()
+    }
+
+    fn as_string(&self) -> String {
+        let input_sections_str = self
+            .sections
+            .iter()
+            .map(|input_section| {
+                let input_section = input_section.read().unwrap();
+                format!("\"{}\"", input_section.elf_section.name.clone())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("OutputSection \"{}\" [{}]", self.name, input_sections_str)
     }
 }
 
@@ -398,7 +447,7 @@ fn main() {
         .collect::<Vec<_>>();
 
     for file in files.iter_mut() {
-        info!("Parsing {}", file.file_name);
+        log::info!("Parsing {}", file.file_name);
         file.parse();
     }
 
@@ -408,7 +457,7 @@ fn main() {
     let mut ctx = Context::new(files);
 
     // Register (un)defined symbols
-    info!("Resolving symbols");
+    log::info!("Resolving symbols");
     ctx.resovle_symbols();
 
     ctx.dump();
@@ -419,20 +468,56 @@ fn main() {
     // Eliminate duplicate comdat groups
     // What is this?
 
-    let mut output_chunks: Vec<&dyn OutputChunk> = vec![];
+    let mut output_chunks: Vec<Arc<RwLock<dyn OutputChunk>>> = vec![];
 
     // Bin input sections into output sections
-    // How can we handle duplicate sections?
+    log::info!("Merging sections");
     for file in ctx.file_pool.values() {
         let mut file = file.borrow_mut();
         for input_section in file.input_sections.iter_mut() {
-            if let Some(input_section) = input_section {}
+            if let Some(input_section_ref) = input_section {
+                let input_section = input_section_ref.read().unwrap();
+                let output_section_ref = &input_section.output_section;
+                let mut output_section = output_section_ref.write().unwrap();
+
+                // Push the section to chunks at most once
+                if output_section.sections.is_empty() {
+                    let chunk = Arc::clone(output_section_ref) as Arc<RwLock<dyn OutputChunk>>;
+                    output_chunks.push(chunk);
+                }
+
+                output_section.sections.push(Arc::clone(&input_section_ref));
+            }
         }
     }
 
     // Assign offsets to input sections
+    log::info!("Assigning offsets");
+    let mut filesize = 0;
+    for chunk in output_chunks.iter_mut() {
+        let mut chunk = chunk.write().unwrap();
+        chunk.set_offset(filesize);
+        filesize += chunk.get_size();
+    }
 
     // Create an output file
 
+    log::debug!("Output chunks:");
+    for chunk in output_chunks.iter_mut() {
+        let chunk = chunk.read().unwrap();
+        log::debug!("\t{}", chunk.as_string());
+    }
+
+    // Allocate a buffer for the output file
+    // TODO: We should not zero-clear the buffer for performance reasons
+    let mut buf: Vec<u8> = vec![];
+    buf.resize(filesize, 0);
+
     // Copy input sections to the output file
+    for chunk in output_chunks.iter_mut() {
+        let chunk = chunk.write().unwrap();
+        chunk.copy_to(&mut buf);
+    }
+
+    // Relocation
 }
