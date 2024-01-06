@@ -55,15 +55,17 @@ impl Context {
             for (elf_section, input_section) in
                 file.elf_sections.iter().zip(file.input_sections.iter())
             {
-                log::debug!(
-                    "\t{:?} {}",
-                    elf_section.name,
-                    (if input_section.is_some() {
-                        "(InputSection)"
-                    } else {
-                        ""
-                    })
-                );
+                if let Some(input_section) = input_section {
+                    let output_section = &input_section.output_section;
+                    log::debug!(
+                        "\t{:?} (InputSection -> {})",
+                        elf_section.name,
+                        output_section.name
+                    );
+                    continue;
+                } else {
+                    log::debug!("\t{:?}", elf_section.name);
+                }
             }
         }
     }
@@ -181,9 +183,8 @@ impl ObjectFile {
                     todo!("TODO:")
                 }
                 _ => {
-                    self.input_sections[i] = Some(InputSection {
-                        elf_section: Rc::clone(elf_section),
-                    });
+                    let input_section = InputSection::new(Rc::clone(elf_section));
+                    self.input_sections[i] = Some(input_section);
                 }
             }
         }
@@ -247,6 +248,17 @@ impl std::fmt::Debug for ElfSection {
 #[derive(Debug, Clone)]
 struct InputSection {
     elf_section: Rc<ElfSection>,
+    output_section: OutputSection,
+}
+
+impl InputSection {
+    fn new(elf_section: Rc<ElfSection>) -> InputSection {
+        let output_section = OutputSection::from_input_section(&elf_section.name);
+        InputSection {
+            elf_section,
+            output_section,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -299,6 +311,60 @@ impl OutputChunk for OutputEhdr {
     }
 }
 
+#[derive(Debug, Clone)]
+struct OutputSection {
+    name: String,
+}
+
+impl OutputSection {
+    fn from_input_section(name: &String) -> OutputSection {
+        const COMMON_SECTIONS: [&str; 12] = [
+            ".text",
+            ".data",
+            ".data.rel.ro",
+            ".rodata",
+            ".bss",
+            ".bss.rel.ro",
+            ".ctors",
+            ".dtors",
+            ".init_array",
+            ".fini_array",
+            ".tbss",
+            ".tdata",
+        ];
+        for common_section in COMMON_SECTIONS.iter() {
+            if name == common_section || name.starts_with(&format!("{name}.")) {
+                return OutputSection {
+                    name: common_section.to_string(),
+                };
+            }
+        }
+        panic!()
+    }
+}
+
+impl OutputChunk for OutputSection {
+    fn get_size(&self) -> usize {
+        todo!()
+    }
+
+    fn get_offset(&self) -> usize {
+        todo!()
+    }
+
+    fn set_offset(&mut self, offset: usize) {
+        todo!()
+    }
+
+    fn copy_to(&self, buf: &mut [u8]) {
+        todo!()
+    }
+
+    fn relocate(&mut self, relocs: &[u8]) {
+        todo!()
+    }
+}
+
 fn main() {
     env_logger::init();
     let args = std::env::args().collect::<Vec<String>>();
@@ -334,8 +400,16 @@ fn main() {
     // Eliminate duplicate comdat groups
     // What is this?
 
+    let mut output_chunks: Vec<&dyn OutputChunk> = vec![];
+
     // Bin input sections into output sections
     // How can we handle duplicate sections?
+    for file in ctx.file_pool.values() {
+        let mut file = file.borrow_mut();
+        for input_section in file.input_sections.iter_mut() {
+            if let Some(input_section) = input_section {}
+        }
+    }
 
     // Assign offsets to input sections
 
