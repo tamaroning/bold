@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{context::ObjectId, output_section::OutputSection, dummy};
+use crate::{context::ObjectId, dummy, output_section::OutputSection};
 use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
 
 pub struct ObjectFile {
@@ -14,6 +14,7 @@ pub struct ObjectFile {
     elf_sections: Vec<Arc<ElfSection>>,
     elf_symbols: Vec<ElfSymbol>,
 
+    // Use RefCell instead of RwLock?
     input_sections: Vec<Option<Arc<RwLock<InputSection>>>>,
     symbols: Vec<Option<Symbol>>,
 }

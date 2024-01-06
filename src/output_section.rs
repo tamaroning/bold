@@ -1,20 +1,14 @@
-use std::sync::{Arc, OnceLock, RwLock};
+use std::{
+    cell::RefCell,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use elf::{file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
 
 use crate::{dummy, input_section::InputSection};
 
-/*
-pub enum OutputChunk2 {
-    Header(Arc<RwLock<dyn OutputChunk>>),
-    Section(Arc<RwLock<OutputSection>>),
-    Synthetic(Arc<RwLock<dyn OutputChunk>>),
-}
-*/
-
-pub trait OutputChunk {
+pub trait Chunk {
     fn get_name(&self) -> String;
-    fn get_kind(&self) -> ChunkKind;
     fn get_size(&self) -> usize;
     fn get_offset(&self) -> usize;
     /// Set size and offset
@@ -22,12 +16,6 @@ pub trait OutputChunk {
     //fn update_shdr(&mut self);
     fn copy_to(&self, buf: &mut [u8]);
     fn as_string(&self) -> String;
-}
-
-pub enum ChunkKind {
-    Header,
-    Regular,
-    Synthetic,
 }
 
 pub struct OutputEhdr {
@@ -40,13 +28,9 @@ impl OutputEhdr {
     }
 }
 
-impl OutputChunk for OutputEhdr {
+impl Chunk for OutputEhdr {
     fn get_name(&self) -> String {
         "".to_owned()
-    }
-
-    fn get_kind(&self) -> ChunkKind {
-        ChunkKind::Header
     }
 
     fn get_size(&self) -> usize {
@@ -98,13 +82,9 @@ impl OutputShdr {
     }
 }
 
-impl OutputChunk for OutputShdr {
+impl Chunk for OutputShdr {
     fn get_name(&self) -> String {
         "".to_owned()
-    }
-
-    fn get_kind(&self) -> ChunkKind {
-        ChunkKind::Header
     }
 
     fn get_size(&self) -> usize {
@@ -151,13 +131,9 @@ impl OutputPhdr {
     }
 }
 
-impl OutputChunk for OutputPhdr {
+impl Chunk for OutputPhdr {
     fn get_name(&self) -> String {
         "".to_owned()
-    }
-
-    fn get_kind(&self) -> ChunkKind {
-        ChunkKind::Header
     }
 
     fn get_size(&self) -> usize {
@@ -209,6 +185,33 @@ const COMMON_SECTION_NAMES: [&str; 12] = [
     ".tdata",
 ];
 
+pub struct OutputSectionInstance {
+    sections: Vec<Arc<RefCell<OutputSection>>>,
+}
+
+impl OutputSectionInstance {
+    pub fn new() -> OutputSectionInstance {
+        OutputSectionInstance {
+            sections: COMMON_SECTION_NAMES
+                .iter()
+                .map(|name| OutputSection::new(name.to_string()))
+                .map(RefCell::new)
+                .map(Arc::new)
+                .collect(),
+        }
+    }
+
+    pub fn get_section_by_name(&self, name: &String) -> Arc<RefCell<OutputSection>> {
+        for section_ref in self.sections.iter() {
+            let section = section_ref.borrow();
+            if section.name == *name {
+                return Arc::clone(section_ref);
+            }
+        }
+        panic!()
+    }
+}
+
 impl OutputSection {
     fn new(name: String) -> OutputSection {
         OutputSection {
@@ -219,13 +222,23 @@ impl OutputSection {
         }
     }
 
-    pub fn get_instance(name: String) -> Arc<RwLock<OutputSection>> {
-        static COMMON_SECTIONS: OnceLock<Vec<Arc<RwLock<OutputSection>>>> = OnceLock::new();
+    /*
+    pub fn create_instance() -> Vec<Arc<RefCell<OutputSection>>> {
+        COMMON_SECTION_NAMES
+            .iter()
+            .map(|name| OutputSection::new(name.to_string()))
+            .map(RefCell::new)
+            .map(Arc::new)
+            .collect()
+    }
+
+    pub fn get_instance(name: String) -> Arc<RefCell<OutputSection>> {
+        static COMMON_SECTIONS: OnceLock<Vec<Arc<RefCell<OutputSection>>>> = OnceLock::new();
         let common_sections = COMMON_SECTIONS.get_or_init(|| {
             COMMON_SECTION_NAMES
                 .iter()
                 .map(|name| OutputSection::new(name.to_string()))
-                .map(RwLock::new)
+                .map(RefCell::new)
                 .map(Arc::new)
                 .collect()
         });
@@ -237,6 +250,7 @@ impl OutputSection {
         }
         panic!()
     }
+    */
 
     pub fn get_output_name(input_section: &String) -> String {
         for common_section_name in &COMMON_SECTION_NAMES {
@@ -250,13 +264,9 @@ impl OutputSection {
     }
 }
 
-impl OutputChunk for OutputSection {
+impl Chunk for OutputSection {
     fn get_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn get_kind(&self) -> ChunkKind {
-        ChunkKind::Regular
     }
 
     fn get_size(&self) -> usize {

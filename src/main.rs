@@ -1,9 +1,12 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    cell::RefCell,
+    sync::{Arc, RwLock},
+};
 
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputSection, OutputShdr},
+    output_section::{Chunk, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr},
 };
 
 mod context;
@@ -46,10 +49,11 @@ fn main() {
     // Eliminate duplicate comdat groups
     // What is this?
 
-    let mut output_chunks: Vec<Arc<RwLock<dyn OutputChunk>>> = vec![];
-    output_chunks.push(Arc::new(RwLock::new(OutputEhdr::new())));
-    output_chunks.push(Arc::new(RwLock::new(OutputShdr::new())));
-    output_chunks.push(Arc::new(RwLock::new(OutputPhdr::new())));
+    let output_sections = OutputSectionInstance::new();
+    let mut output_chunks: Vec<Arc<RefCell<dyn Chunk>>> = vec![];
+    output_chunks.push(Arc::new(RefCell::new(OutputEhdr::new())));
+    output_chunks.push(Arc::new(RefCell::new(OutputShdr::new())));
+    output_chunks.push(Arc::new(RefCell::new(OutputPhdr::new())));
 
     // Bin input sections into output sections
     log::info!("Merging sections");
@@ -59,13 +63,13 @@ fn main() {
             if let Some(input_section_ref) = input_section {
                 let input_section = input_section_ref.read().unwrap();
                 let output_section_name = &input_section.output_section_name;
-                let output_section_ref = OutputSection::get_instance(output_section_name.clone());
-                let mut output_section = output_section_ref.write().unwrap();
+                let output_section_ref = output_sections.get_section_by_name(output_section_name);
+                let mut output_section = output_section_ref.borrow_mut();
 
                 // Push the section to chunks at most once
                 if output_section.sections.is_empty() {
-                    let chunk = Arc::clone(&output_section_ref) as Arc<RwLock<dyn OutputChunk>>;
-                    output_chunks.push(chunk);
+                    let section = Arc::clone(&output_section_ref);
+                    output_chunks.push(section);
                 }
 
                 output_section.sections.push(Arc::clone(&input_section_ref));
@@ -77,7 +81,7 @@ fn main() {
     log::info!("Assigning offsets");
     let mut filesize = 0;
     for chunk in output_chunks.iter_mut() {
-        let mut chunk = chunk.write().unwrap();
+        let mut chunk = chunk.borrow_mut();
         chunk.set_offset(filesize);
         filesize += chunk.get_size();
     }
@@ -92,7 +96,7 @@ fn main() {
     // Copy input sections to the output file
     log::debug!("Copying chunks");
     for chunk in output_chunks.iter_mut() {
-        let chunk = chunk.write().unwrap();
+        let chunk = chunk.borrow();
         log::debug!(
             "\tCopy {} bytes of {} to offset {}",
             chunk.get_size(),
