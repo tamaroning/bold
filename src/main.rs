@@ -3,7 +3,9 @@ use std::{cell::RefCell, sync::Arc};
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{Chunk, ChunkKind, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr},
+    output_section::{
+        Chunk, OutputChunk, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr,
+    },
 };
 
 mod context;
@@ -47,13 +49,13 @@ fn main() {
     // What is this?
 
     let output_sections = OutputSectionInstance::new();
-    let mut output_chunks: Vec<Arc<RefCell<dyn Chunk>>> = vec![];
-    let ehdr = Arc::new(RefCell::new(OutputEhdr::new()));
-    let shdr = Arc::new(RefCell::new(OutputShdr::new()));
-    let phdr = Arc::new(RefCell::new(OutputPhdr::new()));
-    output_chunks.push(ehdr.clone());
-    output_chunks.push(shdr);
-    output_chunks.push(phdr);
+    let mut output_chunks: Vec<Arc<RefCell<OutputChunk>>> = vec![];
+    let ehdr = Arc::new(RefCell::new(OutputChunk::Ehdr(OutputEhdr::new())));
+    let shdr = Arc::new(RefCell::new(OutputChunk::Shdr(OutputShdr::new())));
+    let phdr = Arc::new(RefCell::new(OutputChunk::Phdr(OutputPhdr::new())));
+    output_chunks.push(Arc::clone(&ehdr));
+    output_chunks.push(Arc::clone(&shdr));
+    output_chunks.push(Arc::clone(&phdr));
 
     // Bin input sections into output sections
     log::info!("Merging sections");
@@ -69,7 +71,7 @@ fn main() {
                 // Push the section to chunks at most once
                 if output_section.sections.is_empty() {
                     let section = Arc::clone(&output_section_ref);
-                    output_chunks.push(section);
+                    output_chunks.push(Arc::new(RefCell::new(OutputChunk::Section(section))));
                 }
 
                 output_section.sections.push(Arc::clone(&input_section_ref));
@@ -97,17 +99,20 @@ fn main() {
     log::info!("Copying regular sections");
     for chunk in output_chunks.iter_mut() {
         let chunk = chunk.borrow();
-        if chunk.get_kind() == ChunkKind::Regular {
-            continue;
+        if let OutputChunk::Section(section) = &*chunk {
+            let section = section.borrow();
+            log::debug!(
+                "\tCopy {} bytes of {} to offset {}",
+                section.get_size(),
+                section.get_name(),
+                section.get_offset(),
+            );
+            section.copy_to(&mut buf);
         }
-        log::debug!(
-            "\tCopy {} bytes of {} to offset {}",
-            chunk.get_size(),
-            chunk.as_string(),
-            chunk.get_offset(),
-        );
-        chunk.copy_to(&mut buf);
     }
 
-    ehdr.borrow().copy_to(&mut buf);
+    let OutputChunk::Ehdr(ehdr) = &*ehdr.borrow_mut() else {
+        unreachable!();
+    };
+    ehdr.copy_to(&mut buf);
 }
