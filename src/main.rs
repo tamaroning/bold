@@ -278,6 +278,13 @@ impl InputSection {
     fn set_offset(&mut self, offset: usize) {
         self.offset = Some(offset);
     }
+
+    fn copy_to(&self, buf: &mut [u8]) {
+        let offset = self.get_offset();
+        let size = self.get_size();
+        let data = &self.elf_section.data;
+        buf[offset..offset + size].copy_from_slice(data);
+    }
 }
 
 #[derive(Clone)]
@@ -387,7 +394,7 @@ impl OutputSection {
                 return Arc::clone(common_section_ref);
             }
         }
-        panic!()
+        panic!("Unknown section: \"{}\"", section_name);
     }
 }
 
@@ -412,7 +419,10 @@ impl OutputChunk for OutputSection {
     }
 
     fn copy_to(&self, buf: &mut [u8]) {
-        todo!()
+        for input_section in self.sections.iter() {
+            let input_section = input_section.read().unwrap();
+            input_section.copy_to(buf);
+        }
     }
 
     fn relocate(&mut self, relocs: &[u8]) {
@@ -434,7 +444,7 @@ impl OutputChunk for OutputSection {
 }
 
 fn main() {
-    env_logger::init();
+    env_logger::builder().format_timestamp(None).init();
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() < 2 {
         eprintln!("Usage: {} <file>", args[0]);
@@ -502,20 +512,21 @@ fn main() {
 
     // Create an output file
 
-    log::debug!("Output chunks:");
-    for chunk in output_chunks.iter_mut() {
-        let chunk = chunk.read().unwrap();
-        log::debug!("\t{}", chunk.as_string());
-    }
-
     // Allocate a buffer for the output file
     // TODO: We should not zero-clear the buffer for performance reasons
     let mut buf: Vec<u8> = vec![];
     buf.resize(filesize, 0);
 
     // Copy input sections to the output file
+    log::debug!("Copying chunks");
     for chunk in output_chunks.iter_mut() {
         let chunk = chunk.write().unwrap();
+        log::debug!(
+            "\tCopy {} bytes of {} to offset {}",
+            chunk.get_size(),
+            chunk.as_string(),
+            chunk.get_offset(),
+        );
         chunk.copy_to(&mut buf);
     }
 
