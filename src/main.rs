@@ -51,7 +51,7 @@ impl Context {
     fn dump_sections(&self) {
         for file in self.file_pool.values() {
             let file = file.borrow();
-            log::debug!("Sections in {}", file.file_name);
+            log::debug!("Sections in '{}'", file.file_name);
             for (elf_section, input_section) in
                 file.elf_sections.iter().zip(file.input_sections.iter())
             {
@@ -71,7 +71,7 @@ impl Context {
     fn dump_symbols(&self) {
         for file in self.file_pool.values() {
             let file = file.borrow();
-            log::debug!("Symbols in {}", file.file_name);
+            log::debug!("Symbols in '{}'", file.file_name);
             for symbol in file.symbols.iter() {
                 if let Some(symbol) = symbol {
                     let definiton_loc = if let Some(file_id) = symbol.file {
@@ -81,7 +81,7 @@ impl Context {
                     } else {
                         "UNDEFINED".to_owned()
                     };
-                    log::debug!("\t\"{}\" ({})", symbol.name, definiton_loc);
+                    log::debug!("\t\"{}\" ('{}')", symbol.name, definiton_loc);
                 }
             }
         }
@@ -323,6 +323,7 @@ fn main() {
     let mut ctx = Context::new(files);
 
     // Register (un)defined symbols
+    info!("Resolving symbols");
     ctx.resovle_symbols();
 
     ctx.dump();
