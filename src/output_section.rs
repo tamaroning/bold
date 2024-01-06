@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    sync::{Arc, OnceLock, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use elf::{file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
@@ -9,6 +9,7 @@ use crate::{dummy, input_section::InputSection};
 
 pub trait Chunk {
     fn get_name(&self) -> String;
+    fn get_kind(&self) -> ChunkKind;
     fn get_size(&self) -> usize;
     fn get_offset(&self) -> usize;
     /// Set size and offset
@@ -16,6 +17,12 @@ pub trait Chunk {
     //fn update_shdr(&mut self);
     fn copy_to(&self, buf: &mut [u8]);
     fn as_string(&self) -> String;
+}
+
+pub enum ChunkKind {
+    Header,
+    Regular,
+    Synthetic,
 }
 
 pub struct OutputEhdr {
@@ -31,6 +38,10 @@ impl OutputEhdr {
 impl Chunk for OutputEhdr {
     fn get_name(&self) -> String {
         "".to_owned()
+    }
+
+    fn get_kind(&self) -> ChunkKind {
+        ChunkKind::Header
     }
 
     fn get_size(&self) -> usize {
@@ -87,6 +98,10 @@ impl Chunk for OutputShdr {
         "".to_owned()
     }
 
+    fn get_kind(&self) -> ChunkKind {
+        ChunkKind::Regular
+    }
+
     fn get_size(&self) -> usize {
         self.shdrs.len() * std::mem::size_of::<Elf64_Shdr>()
     }
@@ -134,6 +149,10 @@ impl OutputPhdr {
 impl Chunk for OutputPhdr {
     fn get_name(&self) -> String {
         "".to_owned()
+    }
+
+    fn get_kind(&self) -> ChunkKind {
+        ChunkKind::Regular
     }
 
     fn get_size(&self) -> usize {
@@ -222,36 +241,6 @@ impl OutputSection {
         }
     }
 
-    /*
-    pub fn create_instance() -> Vec<Arc<RefCell<OutputSection>>> {
-        COMMON_SECTION_NAMES
-            .iter()
-            .map(|name| OutputSection::new(name.to_string()))
-            .map(RefCell::new)
-            .map(Arc::new)
-            .collect()
-    }
-
-    pub fn get_instance(name: String) -> Arc<RefCell<OutputSection>> {
-        static COMMON_SECTIONS: OnceLock<Vec<Arc<RefCell<OutputSection>>>> = OnceLock::new();
-        let common_sections = COMMON_SECTIONS.get_or_init(|| {
-            COMMON_SECTION_NAMES
-                .iter()
-                .map(|name| OutputSection::new(name.to_string()))
-                .map(RefCell::new)
-                .map(Arc::new)
-                .collect()
-        });
-        for common_section_ref in common_sections {
-            let common_section = common_section_ref.read().unwrap();
-            if common_section.name == name {
-                return Arc::clone(common_section_ref);
-            }
-        }
-        panic!()
-    }
-    */
-
     pub fn get_output_name(input_section: &String) -> String {
         for common_section_name in &COMMON_SECTION_NAMES {
             if *input_section == **common_section_name
@@ -267,6 +256,10 @@ impl OutputSection {
 impl Chunk for OutputSection {
     fn get_name(&self) -> String {
         self.name.clone()
+    }
+
+    fn get_kind(&self) -> ChunkKind {
+        ChunkKind::Regular
     }
 
     fn get_size(&self) -> usize {
