@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use elf::{
     endian::AnyEndian, file::Elf64_Ehdr, section::SectionHeader, symbol::Symbol as ElfSymbolData,
@@ -19,7 +23,7 @@ fn get_next_object_file_id() -> ObjectId {
 }
 
 struct Context {
-    file_pool: HashMap<ObjectId, Rc<RefCell<ObjectFile>>>,
+    file_pool: HashMap<ObjectId, Arc<RefCell<ObjectFile>>>,
 }
 
 impl Context {
@@ -27,13 +31,13 @@ impl Context {
         Context {
             file_pool: files
                 .into_iter()
-                .map(|f| (get_next_object_file_id(), Rc::new(RefCell::new(f))))
+                .map(|f| (get_next_object_file_id(), Arc::new(RefCell::new(f))))
                 .collect(),
         }
     }
 
-    fn get_file(&self, id: ObjectId) -> Option<Rc<RefCell<ObjectFile>>> {
-        self.file_pool.get(&id).map(Rc::clone)
+    fn get_file(&self, id: ObjectId) -> Option<Arc<RefCell<ObjectFile>>> {
+        self.file_pool.get(&id).map(Arc::clone)
     }
 
     fn resovle_symbols(&mut self) {
@@ -57,6 +61,7 @@ impl Context {
             {
                 if let Some(input_section) = input_section {
                     let output_section = &input_section.output_section;
+                    let output_section = output_section.read().unwrap();
                     log::debug!(
                         "\t{:?} (InputSection -> {})",
                         elf_section.name,
@@ -98,7 +103,7 @@ struct ObjectFile {
     // Elf sections and symbols
     elf_symtab: SectionHeader,
     first_global: usize,
-    elf_sections: Vec<Rc<ElfSection>>,
+    elf_sections: Vec<Arc<ElfSection>>,
     elf_symbols: Vec<ElfSymbol>,
 
     input_sections: Vec<Option<InputSection>>,
@@ -141,7 +146,7 @@ impl ObjectFile {
         for shdr in section_headers.into_iter() {
             let name = shstrtab.get(shdr.sh_name as usize).unwrap();
             // TODO: remove clone()
-            self.elf_sections.push(Rc::new(ElfSection {
+            self.elf_sections.push(Arc::new(ElfSection {
                 name: name.to_string(),
                 header: shdr.clone(),
                 data: file.section_data(&shdr).unwrap().0.to_vec(),
@@ -183,7 +188,7 @@ impl ObjectFile {
                     todo!("TODO:")
                 }
                 _ => {
-                    let input_section = InputSection::new(Rc::clone(elf_section));
+                    let input_section = InputSection::new(Arc::clone(elf_section));
                     self.input_sections[i] = Some(input_section);
                 }
             }
@@ -247,13 +252,13 @@ impl std::fmt::Debug for ElfSection {
 
 #[derive(Debug, Clone)]
 struct InputSection {
-    elf_section: Rc<ElfSection>,
-    output_section: OutputSection,
+    elf_section: Arc<ElfSection>,
+    output_section: Arc<RwLock<OutputSection>>,
 }
 
 impl InputSection {
-    fn new(elf_section: Rc<ElfSection>) -> InputSection {
-        let output_section = OutputSection::from_input_section(&elf_section.name);
+    fn new(elf_section: Arc<ElfSection>) -> InputSection {
+        let output_section = OutputSection::from_section_name(&elf_section.name);
         InputSection {
             elf_section,
             output_section,
@@ -317,8 +322,8 @@ struct OutputSection {
 }
 
 impl OutputSection {
-    fn from_input_section(name: &String) -> OutputSection {
-        const COMMON_SECTIONS: [&str; 12] = [
+    fn from_section_name(section_name: &String) -> Arc<RwLock<OutputSection>> {
+        const COMMON_SECTION_NAMES: [&str; 12] = [
             ".text",
             ".data",
             ".data.rel.ro",
@@ -332,11 +337,24 @@ impl OutputSection {
             ".tbss",
             ".tdata",
         ];
-        for common_section in COMMON_SECTIONS.iter() {
-            if name == common_section || name.starts_with(&format!("{name}.")) {
-                return OutputSection {
-                    name: common_section.to_string(),
-                };
+        static COMMON_SECTIONS: OnceLock<Vec<Arc<RwLock<OutputSection>>>> = OnceLock::new();
+        let common_sections = COMMON_SECTIONS.get_or_init(|| {
+            COMMON_SECTION_NAMES
+                .iter()
+                .map(|name| OutputSection {
+                    name: name.to_string(),
+                })
+                .map(RwLock::new)
+                .map(Arc::new)
+                .collect()
+        });
+
+        for common_section_ref in common_sections.iter() {
+            let common_section = common_section_ref.read().unwrap();
+            if *section_name == common_section.name
+                || section_name.starts_with(&format!("{section_name}."))
+            {
+                return Arc::clone(common_section_ref);
             }
         }
         panic!()
