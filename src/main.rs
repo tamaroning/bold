@@ -7,19 +7,19 @@ use elf::{
 use log::info;
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
-struct ObjectFileId {
+struct ObjectId {
     private: usize,
 }
 
-fn get_next_object_file_id() -> ObjectFileId {
+fn get_next_object_file_id() -> ObjectId {
     static mut OBJECT_FILE_ID: usize = 0;
     let id = unsafe { OBJECT_FILE_ID };
     unsafe { OBJECT_FILE_ID += 1 };
-    ObjectFileId { private: id }
+    ObjectId { private: id }
 }
 
 struct Context {
-    file_pool: HashMap<ObjectFileId, Rc<RefCell<ObjectFile>>>,
+    file_pool: HashMap<ObjectId, Rc<RefCell<ObjectFile>>>,
 }
 
 impl Context {
@@ -32,7 +32,7 @@ impl Context {
         }
     }
 
-    fn get_file(&self, id: ObjectFileId) -> Option<Rc<RefCell<ObjectFile>>> {
+    fn get_file(&self, id: ObjectId) -> Option<Rc<RefCell<ObjectFile>>> {
         self.file_pool.get(&id).map(Rc::clone)
     }
 
@@ -203,7 +203,7 @@ impl ObjectFile {
         }
     }
 
-    fn register_defined_symbols(&mut self, this_file_id: ObjectFileId) {
+    fn register_defined_symbols(&mut self, this_file_id: ObjectId) {
         for (i, symbol) in self.symbols.iter_mut().enumerate() {
             let esym = &self.elf_symbols[i];
             if esym.sym.is_undefined() {
@@ -264,7 +264,7 @@ impl std::fmt::Debug for ElfSymbol {
 #[derive(Debug, Clone)]
 struct Symbol {
     name: String,
-    file: Option<ObjectFileId>,
+    file: Option<ObjectId>,
 }
 
 trait OutputChunk {
