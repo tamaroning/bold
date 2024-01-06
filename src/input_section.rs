@@ -1,13 +1,7 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{context::ObjectId, output_section::OutputSection};
+use crate::{context::ObjectId, output_section::OutputSection, dummy};
 use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
-
-macro_rules! dummy {
-    ($name: ty) => {
-        unsafe { std::mem::transmute([0 as u8; std::mem::size_of::<$name>()]) }
-    };
-}
 
 pub struct ObjectFile {
     file_name: String,

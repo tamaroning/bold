@@ -2,7 +2,15 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use elf::{file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
 
-use crate::input_section::InputSection;
+use crate::{dummy, input_section::InputSection};
+
+/*
+pub enum OutputChunk2 {
+    Header(Arc<RwLock<dyn OutputChunk>>),
+    Section(Arc<RwLock<OutputSection>>),
+    Synthetic(Arc<RwLock<dyn OutputChunk>>),
+}
+*/
 
 pub trait OutputChunk {
     fn get_name(&self) -> String;
@@ -13,7 +21,6 @@ pub trait OutputChunk {
     fn set_offset(&mut self, offset: usize);
     //fn update_shdr(&mut self);
     fn copy_to(&self, buf: &mut [u8]);
-    fn relocate(&mut self, relocs: &[u8]);
     fn as_string(&self) -> String;
 }
 
@@ -55,12 +62,17 @@ impl OutputChunk for OutputEhdr {
     }
 
     fn copy_to(&self, _buf: &mut [u8]) {
-        // Do nothing
-        // Copy is done in relocate()
-    }
+        use elf::abi::*;
 
-    fn relocate(&mut self, _relocs: &[u8]) {
-        todo!()
+        let mut ehdr: Elf64_Ehdr = dummy!(Elf64_Ehdr);
+        ehdr.e_ident[EI_CLASS] = ELFCLASS64;
+        ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
+        ehdr.e_ident[EI_VERSION] = EV_CURRENT;
+        ehdr.e_type = ET_EXEC; // TODO: PIE
+        ehdr.e_machine = EM_X86_64;
+        ehdr.e_version = EV_CURRENT as u32;
+        ehdr.e_entry = 0x400000; // TODO: entry point
+        ehdr.e_phoff = 0x40; // ok?
     }
 
     fn as_string(&self) -> String {
@@ -108,16 +120,12 @@ impl OutputChunk for OutputShdr {
     }
 
     fn copy_to(&self, buf: &mut [u8]) {
-        return;
-        // TODO:
-        assert!(self.shdrs.len() > 0);
+        if self.shdrs.is_empty() {
+            return;
+        }
         let view = &self.shdrs[0] as *const _ as *const u8;
         let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
         buf.copy_from_slice(slice);
-    }
-
-    fn relocate(&mut self, _relocs: &[u8]) {
-        // Do nothing
     }
 
     fn as_string(&self) -> String {
@@ -165,16 +173,12 @@ impl OutputChunk for OutputPhdr {
     }
 
     fn copy_to(&self, buf: &mut [u8]) {
-        // TODO:
-        return;
-        assert!(self.phdrs.len() > 0);
+        if self.phdrs.is_empty() {
+            return;
+        }
         let view = &self.phdrs[0] as *const _ as *const u8;
         let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
         buf.copy_from_slice(slice);
-    }
-
-    fn relocate(&mut self, _relocs: &[u8]) {
-        // Do nothing
     }
 
     fn as_string(&self) -> String {
@@ -279,10 +283,6 @@ impl OutputChunk for OutputSection {
             let input_section = input_section.read().unwrap();
             input_section.copy_to(buf);
         }
-    }
-
-    fn relocate(&mut self, _relocs: &[u8]) {
-        todo!()
     }
 
     fn as_string(&self) -> String {

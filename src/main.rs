@@ -9,6 +9,7 @@ use crate::{
 mod context;
 mod input_section;
 mod output_section;
+mod utils;
 
 fn main() {
     env_logger::builder().format_timestamp(None).init();
