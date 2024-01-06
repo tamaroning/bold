@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
-use crate::input_section::ObjectFile;
+use crate::{input_section::ObjectFile, output_section::OutputChunk};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct ObjectId {

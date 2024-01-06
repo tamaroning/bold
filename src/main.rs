@@ -1,6 +1,10 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{context::Context, input_section::ObjectFile, output_section::OutputChunk};
+use crate::{
+    context::Context,
+    input_section::ObjectFile,
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
+};
 
 mod context;
 mod input_section;
@@ -42,6 +46,9 @@ fn main() {
     // What is this?
 
     let mut output_chunks: Vec<Arc<RwLock<dyn OutputChunk>>> = vec![];
+    output_chunks.push(Arc::new(RwLock::new(OutputEhdr::new())));
+    output_chunks.push(Arc::new(RwLock::new(OutputShdr::new())));
+    output_chunks.push(Arc::new(RwLock::new(OutputPhdr::new())));
 
     // Bin input sections into output sections
     log::info!("Merging sections");
