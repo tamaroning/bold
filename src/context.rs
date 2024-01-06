@@ -85,9 +85,9 @@ impl Context {
                         let file = file.borrow();
                         file.get_file_name().to_owned()
                     } else {
-                        "UNDEFINED".to_owned()
+                        "undefined".to_owned()
                     };
-                    log::debug!("\t\"{}\" ('{}')", symbol.name, definiton_loc);
+                    log::debug!("\t\"{}\" ({})", symbol.name, definiton_loc);
                 }
             }
         }
