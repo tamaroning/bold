@@ -59,12 +59,11 @@ impl Context {
             {
                 if let Some(input_section) = input_section {
                     let input_section = input_section.read().unwrap();
-                    let output_section = &input_section.output_section;
-                    let output_section = output_section.read().unwrap();
+                    let output_section = &input_section.output_section_name;
                     log::debug!(
                         "\t{:?} (InputSection -> {})",
                         elf_section.name,
-                        output_section.get_name()
+                        output_section
                     );
                     continue;
                 } else {

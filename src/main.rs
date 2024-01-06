@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputSection, OutputShdr},
 };
 
 mod context;
@@ -57,12 +57,13 @@ fn main() {
         for input_section in file.get_input_sections().iter() {
             if let Some(input_section_ref) = input_section {
                 let input_section = input_section_ref.read().unwrap();
-                let output_section_ref = &input_section.output_section;
+                let output_section_name = &input_section.output_section_name;
+                let output_section_ref = OutputSection::get_instance(output_section_name.clone());
                 let mut output_section = output_section_ref.write().unwrap();
 
                 // Push the section to chunks at most once
                 if output_section.sections.is_empty() {
-                    let chunk = Arc::clone(output_section_ref) as Arc<RwLock<dyn OutputChunk>>;
+                    let chunk = Arc::clone(&output_section_ref) as Arc<RwLock<dyn OutputChunk>>;
                     output_chunks.push(chunk);
                 }
 

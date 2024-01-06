@@ -190,6 +190,21 @@ pub struct OutputSection {
     size: Option<usize>,
 }
 
+const COMMON_SECTION_NAMES: [&str; 12] = [
+    ".text",
+    ".data",
+    ".data.rel.ro",
+    ".rodata",
+    ".bss",
+    ".bss.rel.ro",
+    ".ctors",
+    ".dtors",
+    ".init_array",
+    ".fini_array",
+    ".tbss",
+    ".tdata",
+];
+
 impl OutputSection {
     fn new(name: String) -> OutputSection {
         OutputSection {
@@ -200,21 +215,7 @@ impl OutputSection {
         }
     }
 
-    pub fn from_section_name(section_name: &String) -> Arc<RwLock<OutputSection>> {
-        const COMMON_SECTION_NAMES: [&str; 12] = [
-            ".text",
-            ".data",
-            ".data.rel.ro",
-            ".rodata",
-            ".bss",
-            ".bss.rel.ro",
-            ".ctors",
-            ".dtors",
-            ".init_array",
-            ".fini_array",
-            ".tbss",
-            ".tdata",
-        ];
+    pub fn get_instance(name: String) -> Arc<RwLock<OutputSection>> {
         static COMMON_SECTIONS: OnceLock<Vec<Arc<RwLock<OutputSection>>>> = OnceLock::new();
         let common_sections = COMMON_SECTIONS.get_or_init(|| {
             COMMON_SECTION_NAMES
@@ -224,16 +225,24 @@ impl OutputSection {
                 .map(Arc::new)
                 .collect()
         });
-
-        for common_section_ref in common_sections.iter() {
+        for common_section_ref in common_sections {
             let common_section = common_section_ref.read().unwrap();
-            if *section_name == common_section.name
-                || section_name.starts_with(&format!("{section_name}."))
-            {
+            if common_section.name == name {
                 return Arc::clone(common_section_ref);
             }
         }
-        panic!("Unknown section: \"{}\"", section_name);
+        panic!()
+    }
+
+    pub fn get_output_name(input_section: &String) -> String {
+        for common_section_name in &COMMON_SECTION_NAMES {
+            if *input_section == **common_section_name
+                || input_section.starts_with(&format!("{common_section_name}."))
+            {
+                return common_section_name.to_string();
+            }
+        }
+        panic!("Unknown section: \"{}\"", input_section);
     }
 }
 

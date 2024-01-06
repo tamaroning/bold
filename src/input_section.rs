@@ -177,16 +177,16 @@ impl std::fmt::Debug for ElfSection {
 #[derive(Debug, Clone)]
 pub struct InputSection {
     pub elf_section: Arc<ElfSection>,
-    pub output_section: Arc<RwLock<OutputSection>>,
+    pub output_section_name: String,
     offset: Option<usize>,
 }
 
 impl InputSection {
     fn new(elf_section: Arc<ElfSection>) -> InputSection {
-        let output_section = OutputSection::from_section_name(&elf_section.name);
+        let output_section_name = OutputSection::get_output_name(&elf_section.name);
         InputSection {
             elf_section,
-            output_section,
+            output_section_name,
             offset: None,
         }
     }
