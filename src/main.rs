@@ -3,7 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{Chunk, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr},
+    output_section::{Chunk, ChunkKind, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr},
 };
 
 mod context;
@@ -48,9 +48,12 @@ fn main() {
 
     let output_sections = OutputSectionInstance::new();
     let mut output_chunks: Vec<Arc<RefCell<dyn Chunk>>> = vec![];
-    output_chunks.push(Arc::new(RefCell::new(OutputEhdr::new())));
-    output_chunks.push(Arc::new(RefCell::new(OutputShdr::new())));
-    output_chunks.push(Arc::new(RefCell::new(OutputPhdr::new())));
+    let ehdr = Arc::new(RefCell::new(OutputEhdr::new()));
+    let shdr = Arc::new(RefCell::new(OutputShdr::new()));
+    let phdr = Arc::new(RefCell::new(OutputPhdr::new()));
+    output_chunks.push(ehdr.clone());
+    output_chunks.push(shdr);
+    output_chunks.push(phdr);
 
     // Bin input sections into output sections
     log::info!("Merging sections");
@@ -91,9 +94,12 @@ fn main() {
     buf.resize(filesize, 0);
 
     // Copy input sections to the output file
-    log::debug!("Copying chunks");
+    log::info!("Copying regular sections");
     for chunk in output_chunks.iter_mut() {
         let chunk = chunk.borrow();
+        if chunk.get_kind() == ChunkKind::Regular {
+            continue;
+        }
         log::debug!(
             "\tCopy {} bytes of {} to offset {}",
             chunk.get_size(),
@@ -103,5 +109,5 @@ fn main() {
         chunk.copy_to(&mut buf);
     }
 
-    // Relocation
+    ehdr.borrow().copy_to(&mut buf);
 }

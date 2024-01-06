@@ -19,6 +19,7 @@ pub trait Chunk {
     fn as_string(&self) -> String;
 }
 
+#[derive(PartialEq, Eq)]
 pub enum ChunkKind {
     Header,
     Regular,
@@ -32,6 +33,26 @@ pub struct OutputEhdr {
 impl OutputEhdr {
     pub fn new() -> OutputEhdr {
         OutputEhdr { offset: None }
+    }
+}
+
+impl OutputEhdr {
+    pub fn copy_to(&self, buf: &mut [u8]) {
+        use elf::abi::*;
+
+        let mut ehdr: Elf64_Ehdr = dummy!(Elf64_Ehdr);
+        ehdr.e_ident[EI_CLASS] = ELFCLASS64;
+        ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
+        ehdr.e_ident[EI_VERSION] = EV_CURRENT;
+        ehdr.e_type = ET_EXEC; // TODO: PIE
+        ehdr.e_machine = EM_X86_64;
+        ehdr.e_version = EV_CURRENT as u32;
+        ehdr.e_entry = 0x400000; // TODO: entry point
+        ehdr.e_phoff = 0x40; // ok?
+
+        let view = &ehdr as *const _ as *const u8;
+        let slice = unsafe { std::slice::from_raw_parts(view, std::mem::size_of::<Elf64_Ehdr>()) };
+        buf.copy_from_slice(slice);
     }
 }
 
@@ -57,17 +78,7 @@ impl Chunk for OutputEhdr {
     }
 
     fn copy_to(&self, _buf: &mut [u8]) {
-        use elf::abi::*;
-
-        let mut ehdr: Elf64_Ehdr = dummy!(Elf64_Ehdr);
-        ehdr.e_ident[EI_CLASS] = ELFCLASS64;
-        ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
-        ehdr.e_ident[EI_VERSION] = EV_CURRENT;
-        ehdr.e_type = ET_EXEC; // TODO: PIE
-        ehdr.e_machine = EM_X86_64;
-        ehdr.e_version = EV_CURRENT as u32;
-        ehdr.e_entry = 0x400000; // TODO: entry point
-        ehdr.e_phoff = 0x40; // ok?
+        panic!()
     }
 
     fn as_string(&self) -> String {
@@ -271,6 +282,7 @@ impl Chunk for OutputSection {
     }
 
     fn set_offset(&mut self, mut offset: usize) {
+        // TODO: alignment?
         let offset_start = offset;
         self.offset = Some(offset);
         for input_section in self.sections.iter() {
