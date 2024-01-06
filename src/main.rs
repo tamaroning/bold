@@ -60,6 +60,7 @@ impl Context {
                 file.elf_sections.iter().zip(file.input_sections.iter())
             {
                 if let Some(input_section) = input_section {
+                    let input_section = input_section.read().unwrap();
                     let output_section = &input_section.output_section;
                     let output_section = output_section.read().unwrap();
                     log::debug!(
@@ -106,7 +107,7 @@ struct ObjectFile {
     elf_sections: Vec<Arc<ElfSection>>,
     elf_symbols: Vec<ElfSymbol>,
 
-    input_sections: Vec<Option<InputSection>>,
+    input_sections: Vec<Option<Arc<RwLock<InputSection>>>>,
     symbols: Vec<Option<Symbol>>,
 }
 
@@ -189,7 +190,7 @@ impl ObjectFile {
                 }
                 _ => {
                     let input_section = InputSection::new(Arc::clone(elf_section));
-                    self.input_sections[i] = Some(input_section);
+                    self.input_sections[i] = Some(Arc::new(RwLock::new(input_section)));
                 }
             }
         }
