@@ -1,17 +1,18 @@
-use std::{
-    cell::RefCell,
-    sync::{Arc, RwLock},
-};
+use std::{cell::RefCell, sync::Arc};
 
 use elf::{file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
 
-use crate::{context::COMMON_SECTION_NAMES, dummy, input_section::InputSection};
+use crate::{
+    context::{Context, COMMON_SECTION_NAMES},
+    dummy,
+    input_section::InputSectionId,
+};
 
 pub enum OutputChunk {
     Ehdr(OutputEhdr),
     Shdr(OutputShdr),
     Phdr(OutputPhdr),
-    Section(OutputSection),
+    Section(OutputSectionId),
 }
 
 impl OutputChunk {
@@ -21,64 +22,42 @@ impl OutputChunk {
             _ => false,
         }
     }
-}
 
-impl Chunk for OutputChunk {
-    fn get_name(&self) -> String {
+    pub fn get_offset(&self, ctx: &Context) -> usize {
         match self {
-            OutputChunk::Ehdr(ehdr) => ehdr.get_name(),
-            OutputChunk::Shdr(shdr) => shdr.get_name(),
-            OutputChunk::Phdr(phdr) => phdr.get_name(),
-            OutputChunk::Section(section) => section.get_name(),
-        }
-    }
-
-    fn get_size(&self) -> usize {
-        match self {
-            OutputChunk::Ehdr(ehdr) => ehdr.get_size(),
-            OutputChunk::Shdr(shdr) => shdr.get_size(),
-            OutputChunk::Phdr(phdr) => phdr.get_size(),
-            OutputChunk::Section(section) => section.get_size(),
-        }
-    }
-
-    fn get_offset(&self) -> usize {
-        match self {
-            OutputChunk::Ehdr(ehdr) => ehdr.get_offset(),
-            OutputChunk::Shdr(shdr) => shdr.get_offset(),
-            OutputChunk::Phdr(phdr) => phdr.get_offset(),
-            OutputChunk::Section(section) => section.get_offset(),
-        }
-    }
-
-    fn set_offset(&mut self, offset: usize) {
-        match self {
-            OutputChunk::Ehdr(ehdr) => ehdr.set_offset(offset),
-            OutputChunk::Shdr(shdr) => shdr.set_offset(offset),
-            OutputChunk::Phdr(phdr) => phdr.set_offset(offset),
-            OutputChunk::Section(section) => {
-                section.set_offset(offset);
+            OutputChunk::Ehdr(chunk) => chunk.offset.unwrap(),
+            OutputChunk::Shdr(chunk) => chunk.offset.unwrap(),
+            OutputChunk::Phdr(chunk) => chunk.offset.unwrap(),
+            OutputChunk::Section(chunk) => {
+                let chunk = ctx.get_output_section(*chunk);
+                chunk.get_offset()
             }
         }
     }
 
-    fn as_string(&self) -> String {
+    pub fn set_offset(&mut self, ctx: &mut Context, offset: usize) {
         match self {
-            OutputChunk::Ehdr(ehdr) => ehdr.as_string(),
-            OutputChunk::Shdr(shdr) => shdr.as_string(),
-            OutputChunk::Phdr(phdr) => phdr.as_string(),
-            OutputChunk::Section(section) => section.as_string(),
+            OutputChunk::Ehdr(chunk) => chunk.offset = Some(offset),
+            OutputChunk::Shdr(chunk) => chunk.offset = Some(offset),
+            OutputChunk::Phdr(chunk) => chunk.offset = Some(offset),
+            OutputChunk::Section(chunk) => {
+                let chunk = ctx.get_output_section_mut(*chunk);
+                chunk.set_offset(ctx, offset);
+            }
         }
     }
-}
 
-pub trait Chunk {
-    fn get_name(&self) -> String;
-    fn get_size(&self) -> usize;
-    fn get_offset(&self) -> usize;
-    /// Set size and offset
-    fn set_offset(&mut self, offset: usize);
-    fn as_string(&self) -> String;
+    pub fn get_size(&self, ctx: &Context) -> usize {
+        match self {
+            OutputChunk::Ehdr(chunk) => chunk.get_size(),
+            OutputChunk::Shdr(chunk) => chunk.get_size(),
+            OutputChunk::Phdr(chunk) => chunk.get_size(),
+            OutputChunk::Section(chunk) => {
+                let chunk = ctx.get_output_section(*chunk);
+                chunk.size.unwrap()
+            }
+        }
+    }
 }
 
 pub struct OutputEhdr {
@@ -106,32 +85,14 @@ impl OutputEhdr {
                                  // TODO: rest of the fields
 
         let view = &ehdr as *const _ as *const u8;
-        let offset = self.get_offset();
+        let offset = self.offset.unwrap();
         let size = self.get_size();
         let data = unsafe { std::slice::from_raw_parts(view, size) };
         buf[offset..offset + size].copy_from_slice(data);
     }
-}
-
-impl Chunk for OutputEhdr {
-    fn get_name(&self) -> String {
-        "".to_owned()
-    }
 
     fn get_size(&self) -> usize {
         std::mem::size_of::<Elf64_Ehdr>()
-    }
-
-    fn get_offset(&self) -> usize {
-        self.offset.unwrap()
-    }
-
-    fn set_offset(&mut self, offset: usize) {
-        self.offset = Some(offset);
-    }
-
-    fn as_string(&self) -> String {
-        format!("OutputEhdr")
     }
 }
 
@@ -171,27 +132,9 @@ impl OutputShdr {
             }
         }
     }
-}
-
-impl Chunk for OutputShdr {
-    fn get_name(&self) -> String {
-        "".to_owned()
-    }
 
     fn get_size(&self) -> usize {
         self.shdrs.len() * std::mem::size_of::<Elf64_Shdr>()
-    }
-
-    fn get_offset(&self) -> usize {
-        self.offset.unwrap()
-    }
-
-    fn set_offset(&mut self, offset: usize) {
-        self.offset = Some(offset);
-    }
-
-    fn as_string(&self) -> String {
-        format!("OutputShdr")
     }
 }
 
@@ -212,6 +155,10 @@ impl OutputPhdr {
         self.phdrs.push(phdr);
     }
 
+    fn get_size(&self) -> usize {
+        self.phdrs.len() * std::mem::size_of::<Elf64_Phdr>()
+    }
+
     pub fn copy_to(&self, buf: &mut [u8]) {
         if self.phdrs.is_empty() {
             return;
@@ -219,28 +166,6 @@ impl OutputPhdr {
         let view = &self.phdrs[0] as *const _ as *const u8;
         let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
         buf.copy_from_slice(slice);
-    }
-}
-
-impl Chunk for OutputPhdr {
-    fn get_name(&self) -> String {
-        "".to_owned()
-    }
-
-    fn get_size(&self) -> usize {
-        self.phdrs.len() * std::mem::size_of::<Elf64_Phdr>()
-    }
-
-    fn get_offset(&self) -> usize {
-        self.offset.unwrap()
-    }
-
-    fn set_offset(&mut self, offset: usize) {
-        self.offset = Some(offset);
-    }
-
-    fn as_string(&self) -> String {
-        format!("OutputPhdr")
     }
 }
 
@@ -260,8 +185,8 @@ fn get_next_output_section_id() -> OutputSectionId {
 pub struct OutputSection {
     id: OutputSectionId,
     name: String,
-    pub sections: Vec<Arc<RwLock<InputSection>>>,
-    offset: Option<usize>,
+    pub sections: Vec<InputSectionId>,
+    private_offset: Option<usize>,
     size: Option<usize>,
 }
 
@@ -271,7 +196,7 @@ impl OutputSection {
             id: get_next_output_section_id(),
             name,
             sections: vec![],
-            offset: None,
+            private_offset: None,
             size: None,
         }
     }
@@ -295,45 +220,35 @@ impl OutputSection {
         panic!("Unknown section: \"{}\"", input_section);
     }
 
-    pub fn copy_to(&self, buf: &mut [u8]) {
-        for input_section in self.sections.iter() {
-            let input_section = input_section.read().unwrap();
-            input_section.copy_to(buf);
-        }
-    }
-}
-
-impl Chunk for OutputSection {
-    fn get_name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn get_size(&self) -> usize {
-        self.size.unwrap()
-    }
-
     fn get_offset(&self) -> usize {
-        self.offset.unwrap()
+        self.private_offset.unwrap()
     }
 
-    fn set_offset(&mut self, mut offset: usize) {
+    fn set_offset(&mut self, ctx: &mut Context, mut offset: usize) {
         // TODO: alignment?
         let offset_start = offset;
-        self.offset = Some(offset);
+        self.private_offset = Some(offset);
         for input_section in self.sections.iter() {
-            let mut input_section = input_section.write().unwrap();
+            let input_section = ctx.get_input_section_mut(*input_section);
             input_section.set_offset(offset);
             offset += input_section.get_size();
         }
         self.size = Some(offset - offset_start);
     }
 
-    fn as_string(&self) -> String {
+    pub fn copy_to(&self, ctx: &Context, buf: &mut [u8]) {
+        for input_section in self.sections.iter() {
+            let input_section = ctx.get_input_section(*input_section);
+            input_section.copy_to(buf);
+        }
+    }
+
+    fn as_string(&self, ctx: &Context) -> String {
         let input_sections_str = self
             .sections
             .iter()
             .map(|input_section| {
-                let input_section = input_section.read().unwrap();
+                let input_section = ctx.get_input_section(*input_section);
                 format!("\"{}\"", input_section.elf_section.name.clone())
             })
             .collect::<Vec<_>>()

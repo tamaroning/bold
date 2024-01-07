@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    input_section::{ObjectFile, ObjectId},
+    input_section::{InputSection, InputSectionId, ObjectFile, ObjectId},
     output_section::{OutputSection, OutputSectionId},
 };
 
@@ -22,13 +22,14 @@ pub const COMMON_SECTION_NAMES: [&str; 12] = [
 
 pub struct Context {
     file_pool: HashMap<ObjectId, ObjectFile>,
+    input_sections: HashMap<InputSectionId, InputSection>,
     output_sections: HashMap<OutputSectionId, OutputSection>,
 }
 
 impl Context {
-    pub fn new(files: Vec<ObjectFile>) -> Context {
+    pub fn new() -> Context {
         Context {
-            file_pool: files.into_iter().map(|f| (f.get_id(), f)).collect(),
+            file_pool: HashMap::new(),
             output_sections: COMMON_SECTION_NAMES
                 .iter()
                 .map(|name| {
@@ -36,7 +37,16 @@ impl Context {
                     (sec.get_id(), sec)
                 })
                 .collect(),
+            input_sections: HashMap::new(),
         }
+    }
+
+    pub fn set_object_file(&mut self, file: ObjectFile) {
+        self.file_pool.insert(file.get_id(), file);
+    }
+
+    pub fn set_input_section(&mut self, section: InputSection) {
+        self.input_sections.insert(section.get_id(), section);
     }
 
     pub fn files(&self) -> impl Iterator<Item = &ObjectFile> {
@@ -53,6 +63,14 @@ impl Context {
 
     pub fn get_file_mut(&mut self, id: ObjectId) -> &mut ObjectFile {
         self.file_pool.get_mut(&id).unwrap()
+    }
+
+    pub fn get_input_section(&self, id: InputSectionId) -> &InputSection {
+        self.input_sections.get(&id).unwrap()
+    }
+
+    pub fn get_input_section_mut(&mut self, id: InputSectionId) -> &mut InputSection {
+        self.input_sections.get_mut(&id).unwrap()
     }
 
     pub fn get_output_section(&self, id: OutputSectionId) -> &OutputSection {
@@ -103,7 +121,7 @@ impl Context {
                 .zip(file.get_input_sections().iter())
             {
                 if let Some(input_section) = input_section {
-                    let input_section = input_section.read().unwrap();
+                    let input_section = self.get_input_section(*input_section);
                     let output_section = &input_section.output_section_name;
                     log::debug!(
                         "\t{:?} (InputSection -> {})",

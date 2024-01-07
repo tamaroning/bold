@@ -1,6 +1,6 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
-use crate::{context::ObjectId, dummy, output_section::OutputSection};
+use crate::{context::Context, dummy, output_section::OutputSection};
 use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
@@ -27,8 +27,7 @@ pub struct ObjectFile {
     elf_sections: Vec<Arc<ElfSection>>,
     elf_symbols: Vec<ElfSymbol>,
 
-    // Use RefCell instead of RwLock?
-    input_sections: Vec<Option<Arc<RwLock<InputSection>>>>,
+    input_sections: Vec<Option<InputSectionId>>,
     symbols: Vec<Option<Symbol>>,
 }
 
@@ -65,7 +64,7 @@ impl ObjectFile {
         &self.elf_symbols
     }
 
-    pub fn get_input_sections(&self) -> &[Option<Arc<RwLock<InputSection>>>] {
+    pub fn get_input_sections(&self) -> &[Option<InputSectionId>] {
         &self.input_sections
     }
 
@@ -73,7 +72,7 @@ impl ObjectFile {
         &self.symbols
     }
 
-    pub fn parse(&mut self) {
+    pub fn parse(&mut self, ctx: &mut Context) {
         let file = ElfBytes::<AnyEndian>::minimal_parse(&self.data).expect("Open ELF file failed");
 
         let shstrtab_shdr = file.section_header_by_name(".shstrtab").unwrap().unwrap();
@@ -105,11 +104,11 @@ impl ObjectFile {
         self.elf_symtab = symtab_shdr;
         self.first_global = symtab_shdr.sh_info as usize;
 
-        self.initialize_sections();
+        self.initialize_sections(ctx);
         self.initialize_symbols();
     }
 
-    fn initialize_sections(&mut self) {
+    fn initialize_sections(&mut self, ctx: &mut Context) {
         self.input_sections.resize(self.elf_sections.len(), None);
         for (i, elf_section) in self.elf_sections.iter().enumerate() {
             match elf_section.header.sh_type {
@@ -126,7 +125,8 @@ impl ObjectFile {
                 }
                 _ => {
                     let input_section = InputSection::new(Arc::clone(elf_section));
-                    self.input_sections[i] = Some(Arc::new(RwLock::new(input_section)));
+                    self.input_sections[i] = Some(input_section.get_id());
+                    ctx.set_input_section(input_section);
                 }
             }
         }
@@ -147,6 +147,7 @@ impl ObjectFile {
     }
 
     pub fn register_defined_symbols(&mut self) {
+        let object_id = self.get_id();
         for (i, symbol) in self.symbols.iter_mut().enumerate() {
             let esym = &self.elf_symbols[i];
             if esym.sym.is_undefined() {
@@ -156,7 +157,7 @@ impl ObjectFile {
                 continue;
             };
 
-            symbol.file = Some(self.get_id());
+            symbol.file = Some(object_id);
             // TODO: visibility
         }
     }
@@ -187,8 +188,21 @@ impl std::fmt::Debug for ElfSection {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+pub struct InputSectionId {
+    private: usize,
+}
+
+fn get_next_input_section_id() -> InputSectionId {
+    static mut INPUT_SECTION_ID: usize = 0;
+    let id = unsafe { INPUT_SECTION_ID };
+    unsafe { INPUT_SECTION_ID += 1 };
+    InputSectionId { private: id }
+}
+
 #[derive(Debug, Clone)]
 pub struct InputSection {
+    id: InputSectionId,
     pub elf_section: Arc<ElfSection>,
     pub output_section_name: String,
     offset: Option<usize>,
@@ -198,10 +212,15 @@ impl InputSection {
     fn new(elf_section: Arc<ElfSection>) -> InputSection {
         let output_section_name = OutputSection::get_output_name(&elf_section.name);
         InputSection {
+            id: get_next_input_section_id(),
             elf_section,
             output_section_name,
             offset: None,
         }
+    }
+
+    pub fn get_id(&self) -> InputSectionId {
+        self.id
     }
 
     pub fn get_size(&self) -> usize {
