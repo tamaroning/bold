@@ -5,7 +5,7 @@ use crate::{
 
 pub struct Linker {
     ctx: Context,
-    chunks: Vec<OutputChunk>,
+    pub chunks: Vec<OutputChunk>,
 }
 
 impl Linker {
@@ -27,7 +27,7 @@ impl Linker {
         }
     }
 
-    pub fn arrange_chunks(&mut self) {
+    pub fn push_common_chunks(&mut self) {
         let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
         let shdr = OutputChunk::Shdr(OutputShdr::new());
         let phdr = OutputChunk::Phdr(OutputPhdr::new());
@@ -36,7 +36,7 @@ impl Linker {
         self.chunks.push(phdr);
     }
 
-    pub fn merge_sections(&mut self) {
+    pub fn bin_input_sections(&mut self) {
         let mut input_sections = vec![];
         for file in self.ctx.files_mut() {
             for input_section in file.get_input_sections().iter() {
@@ -58,7 +58,6 @@ impl Linker {
                 let section = &output_section;
                 self.chunks.push(OutputChunk::Section(section.get_id()));
             }
-
             output_section.sections.push(input_section_id);
         }
     }

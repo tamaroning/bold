@@ -8,6 +8,9 @@ use crate::{
     input_section::InputSectionId,
 };
 
+// TODO: We need to add some sort of Elf_Shdr to this
+// https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L417
+
 pub enum OutputChunk {
     Ehdr(OutputEhdr),
     Shdr(OutputShdr),
@@ -66,6 +69,18 @@ impl OutputChunk {
             OutputChunk::Section(chunk) => {
                 let chunk = ctx.get_output_section(*chunk);
                 chunk.size.unwrap()
+            }
+        }
+    }
+
+    pub fn as_string(&self, ctx: &Context) -> String {
+        match self {
+            OutputChunk::Ehdr(chunk) => "Ehdr".to_owned(),
+            OutputChunk::Shdr(chunk) => "Shdr".to_owned(),
+            OutputChunk::Phdr(chunk) => "Phdr".to_owned(),
+            OutputChunk::Section(chunk) => {
+                let chunk = ctx.get_output_section(*chunk);
+                chunk.as_string(ctx)
             }
         }
     }
