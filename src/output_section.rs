@@ -35,14 +35,25 @@ impl OutputChunk {
         }
     }
 
-    pub fn set_offset(&mut self, ctx: &mut Context, offset: usize) {
+    pub fn set_offset(&mut self, ctx: &mut Context, mut offset: usize) {
         match self {
             OutputChunk::Ehdr(chunk) => chunk.offset = Some(offset),
             OutputChunk::Shdr(chunk) => chunk.offset = Some(offset),
             OutputChunk::Phdr(chunk) => chunk.offset = Some(offset),
-            OutputChunk::Section(chunk) => {
-                let chunk = ctx.get_output_section_mut(*chunk);
-                chunk.set_offset(ctx, offset);
+            OutputChunk::Section(osec_id) => {
+                let osec = ctx.get_output_section_mut(*osec_id);
+
+                let offset_start = offset;
+                osec.private_offset = Some(offset);
+
+                for input_section in osec.sections.clone().iter() {
+                    let input_section = ctx.get_input_section_mut(*input_section);
+                    input_section.set_offset(offset);
+                    offset += input_section.get_size();
+                }
+
+                let osec = ctx.get_output_section_mut(*osec_id);
+                osec.size = Some(offset - offset_start);
             }
         }
     }
@@ -255,9 +266,4 @@ impl OutputSection {
             .join(", ");
         format!("OutputSection \"{}\" [{}]", self.name, input_sections_str)
     }
-}
-
-pub struct Shstrtab {
-    offset: Option<usize>,
-    strings: Vec<String>,
 }
