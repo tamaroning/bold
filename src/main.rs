@@ -60,7 +60,6 @@ fn main() {
     // Bin input sections into output sections
     log::info!("Merging sections");
     for file in ctx.files() {
-        let file = file.borrow_mut();
         for input_section in file.get_input_sections().iter() {
             if let Some(input_section_ref) = input_section {
                 let input_section = input_section_ref.read().unwrap();

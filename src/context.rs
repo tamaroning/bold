@@ -15,7 +15,7 @@ fn get_next_object_file_id() -> ObjectId {
 }
 
 pub struct Context {
-    file_pool: HashMap<ObjectId, Arc<RefCell<ObjectFile>>>,
+    file_pool: HashMap<ObjectId, ObjectFile>,
 }
 
 impl Context {
@@ -23,23 +23,31 @@ impl Context {
         Context {
             file_pool: files
                 .into_iter()
-                .map(|f| (get_next_object_file_id(), Arc::new(RefCell::new(f))))
+                .map(|f| (get_next_object_file_id(), f))
                 .collect(),
         }
     }
 
-    pub fn files(&self) -> impl Iterator<Item = &Arc<RefCell<ObjectFile>>> {
+    pub fn files(&self) -> impl Iterator<Item = &ObjectFile> {
         self.file_pool.values()
     }
 
-    pub fn get_file(&self, id: ObjectId) -> Option<Arc<RefCell<ObjectFile>>> {
-        self.file_pool.get(&id).map(Arc::clone)
+    pub fn files_mut(&mut self) -> impl Iterator<Item = &mut ObjectFile> {
+        self.file_pool.values_mut()
+    }
+
+    pub fn get_file(&self, id: ObjectId) -> &ObjectFile {
+        self.file_pool.get(&id).unwrap()
+    }
+
+    pub fn get_file_mut(&mut self, id: ObjectId) -> &mut ObjectFile {
+        self.file_pool.get_mut(&id).unwrap()
     }
 
     pub fn resovle_symbols(&mut self) {
-        for (id, file) in self.file_pool.iter() {
-            file.borrow_mut().register_defined_symbols(*id);
-            file.borrow_mut().register_undefined_symbols();
+        for (id, file) in self.file_pool.iter_mut() {
+            file.register_defined_symbols(*id);
+            file.register_undefined_symbols();
         }
     }
 
@@ -49,8 +57,7 @@ impl Context {
     }
 
     fn dump_sections(&self) {
-        for file in self.file_pool.values() {
-            let file = file.borrow();
+        for file in self.files() {
             log::debug!("Sections in '{}'", file.get_file_name());
             for (elf_section, input_section) in file
                 .get_elf_sections()
@@ -74,14 +81,12 @@ impl Context {
     }
 
     fn dump_symbols(&self) {
-        for file in self.file_pool.values() {
-            let file = file.borrow();
+        for file in self.files() {
             log::debug!("Symbols in '{}'", file.get_file_name());
             for symbol in file.get_symbols().iter() {
                 if let Some(symbol) = symbol {
                     let definiton_loc = if let Some(file_id) = symbol.file {
-                        let file = self.get_file(file_id).unwrap();
-                        let file = file.borrow();
+                        let file = self.get_file(file_id);
                         file.get_file_name().to_owned()
                     } else {
                         "undefined".to_owned()
