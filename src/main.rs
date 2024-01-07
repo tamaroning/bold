@@ -49,7 +49,7 @@ fn main() {
     // Eliminate duplicate comdat groups
     // What is this?
 
-    let mut output_chunks: Vec<Arc<RefCell<OutputChunk>>> = vec![];
+    let mut output_chunks: Vec<OutputChunk> = vec![];
     let ehdr = Arc::new(RefCell::new(OutputChunk::Ehdr(OutputEhdr::new())));
     let shdr = Arc::new(RefCell::new(OutputChunk::Shdr(OutputShdr::new())));
     let phdr = Arc::new(RefCell::new(OutputChunk::Phdr(OutputPhdr::new())));
