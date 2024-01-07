@@ -3,9 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{
-        Chunk, OutputChunk, OutputEhdr, OutputPhdr, OutputSectionInstance, OutputShdr,
-    },
+    output_section::{Chunk, OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
 };
 
 mod context;
@@ -38,7 +36,10 @@ fn main() {
 
     // Register (un)defined symbols
     log::info!("Resolving symbols");
-    ctx.resovle_symbols();
+    for file in ctx.files_mut() {
+        file.register_defined_symbols();
+        file.register_undefined_symbols();
+    }
 
     ctx.dump();
 
@@ -48,7 +49,6 @@ fn main() {
     // Eliminate duplicate comdat groups
     // What is this?
 
-    let output_sections = OutputSectionInstance::new();
     let mut output_chunks: Vec<Arc<RefCell<OutputChunk>>> = vec![];
     let ehdr = Arc::new(RefCell::new(OutputChunk::Ehdr(OutputEhdr::new())));
     let shdr = Arc::new(RefCell::new(OutputChunk::Shdr(OutputShdr::new())));
@@ -69,8 +69,8 @@ fn main() {
 
                 // Push the section to chunks at most once
                 if output_section.sections.is_empty() {
-                    let section = Arc::clone(&output_section_ref);
-                    output_chunks.push(Arc::new(RefCell::new(OutputChunk::Section(section))));
+                    let section = &output_section_ref;
+                    output_chunks.push(OutputChunk::Section(section));
                 }
 
                 output_section.sections.push(Arc::clone(&input_section_ref));

@@ -5,13 +5,13 @@ use std::{
 
 use elf::{file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
 
-use crate::{dummy, input_section::InputSection};
+use crate::{context::COMMON_SECTION_NAMES, dummy, input_section::InputSection};
 
 pub enum OutputChunk {
     Ehdr(OutputEhdr),
     Shdr(OutputShdr),
     Phdr(OutputPhdr),
-    Section(Arc<RefCell<OutputSection>>),
+    Section(OutputSection),
 }
 
 impl OutputChunk {
@@ -29,10 +29,7 @@ impl Chunk for OutputChunk {
             OutputChunk::Ehdr(ehdr) => ehdr.get_name(),
             OutputChunk::Shdr(shdr) => shdr.get_name(),
             OutputChunk::Phdr(phdr) => phdr.get_name(),
-            OutputChunk::Section(section) => {
-                let section = section.borrow();
-                section.get_name()
-            }
+            OutputChunk::Section(section) => section.get_name(),
         }
     }
 
@@ -41,10 +38,7 @@ impl Chunk for OutputChunk {
             OutputChunk::Ehdr(ehdr) => ehdr.get_size(),
             OutputChunk::Shdr(shdr) => shdr.get_size(),
             OutputChunk::Phdr(phdr) => phdr.get_size(),
-            OutputChunk::Section(section) => {
-                let section = section.borrow();
-                section.get_size()
-            }
+            OutputChunk::Section(section) => section.get_size(),
         }
     }
 
@@ -53,10 +47,7 @@ impl Chunk for OutputChunk {
             OutputChunk::Ehdr(ehdr) => ehdr.get_offset(),
             OutputChunk::Shdr(shdr) => shdr.get_offset(),
             OutputChunk::Phdr(phdr) => phdr.get_offset(),
-            OutputChunk::Section(section) => {
-                let section = section.borrow();
-                section.get_offset()
-            }
+            OutputChunk::Section(section) => section.get_offset(),
         }
     }
 
@@ -66,7 +57,6 @@ impl Chunk for OutputChunk {
             OutputChunk::Shdr(shdr) => shdr.set_offset(offset),
             OutputChunk::Phdr(phdr) => phdr.set_offset(offset),
             OutputChunk::Section(section) => {
-                let mut section = section.borrow_mut();
                 section.set_offset(offset);
             }
         }
@@ -77,10 +67,7 @@ impl Chunk for OutputChunk {
             OutputChunk::Ehdr(ehdr) => ehdr.as_string(),
             OutputChunk::Shdr(shdr) => shdr.as_string(),
             OutputChunk::Phdr(phdr) => phdr.as_string(),
-            OutputChunk::Section(section) => {
-                let section = section.borrow();
-                section.as_string()
-            }
+            OutputChunk::Section(section) => section.as_string(),
         }
     }
 }
@@ -257,64 +244,44 @@ impl Chunk for OutputPhdr {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+pub struct OutputSectionId {
+    private: usize,
+}
+
+fn get_next_output_section_id() -> OutputSectionId {
+    static mut OUTPUT_SECTION_ID: usize = 0;
+    let id = unsafe { OUTPUT_SECTION_ID };
+    unsafe { OUTPUT_SECTION_ID += 1 };
+    OutputSectionId { private: id }
+}
+
 #[derive(Debug, Clone)]
 pub struct OutputSection {
+    id: OutputSectionId,
     name: String,
     pub sections: Vec<Arc<RwLock<InputSection>>>,
     offset: Option<usize>,
     size: Option<usize>,
 }
 
-const COMMON_SECTION_NAMES: [&str; 12] = [
-    ".text",
-    ".data",
-    ".data.rel.ro",
-    ".rodata",
-    ".bss",
-    ".bss.rel.ro",
-    ".ctors",
-    ".dtors",
-    ".init_array",
-    ".fini_array",
-    ".tbss",
-    ".tdata",
-];
-
-pub struct OutputSectionInstance {
-    sections: Vec<Arc<RefCell<OutputSection>>>,
-}
-
-impl OutputSectionInstance {
-    pub fn new() -> OutputSectionInstance {
-        OutputSectionInstance {
-            sections: COMMON_SECTION_NAMES
-                .iter()
-                .map(|name| OutputSection::new(name.to_string()))
-                .map(RefCell::new)
-                .map(Arc::new)
-                .collect(),
-        }
-    }
-
-    pub fn get_section_by_name(&self, name: &String) -> Arc<RefCell<OutputSection>> {
-        for section_ref in self.sections.iter() {
-            let section = section_ref.borrow();
-            if section.name == *name {
-                return Arc::clone(section_ref);
-            }
-        }
-        panic!()
-    }
-}
-
 impl OutputSection {
-    fn new(name: String) -> OutputSection {
+    pub fn new(name: String) -> OutputSection {
         OutputSection {
+            id: get_next_output_section_id(),
             name,
             sections: vec![],
             offset: None,
             size: None,
         }
+    }
+
+    pub fn get_id(&self) -> OutputSectionId {
+        self.id
+    }
+
+    pub fn get_name(&self) -> String {
+        self.name.clone()
     }
 
     pub fn get_output_name(input_section: &String) -> String {

@@ -3,7 +3,20 @@ use std::sync::{Arc, RwLock};
 use crate::{context::ObjectId, dummy, output_section::OutputSection};
 use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
 
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+pub struct ObjectId {
+    private: usize,
+}
+
+fn get_next_object_file_id() -> ObjectId {
+    static mut OBJECT_FILE_ID: usize = 0;
+    let id = unsafe { OBJECT_FILE_ID };
+    unsafe { OBJECT_FILE_ID += 1 };
+    ObjectId { private: id }
+}
+
 pub struct ObjectFile {
+    id: ObjectId,
     file_name: String,
     // TODO: archive file
     data: Vec<u8>,
@@ -24,6 +37,7 @@ impl ObjectFile {
         // TODO: We should use mmap here
         let data = std::fs::read(file_name.clone()).unwrap();
         ObjectFile {
+            id: get_next_object_file_id(),
             file_name,
             data,
             elf_symtab: dummy!(SectionHeader),
@@ -33,6 +47,10 @@ impl ObjectFile {
             input_sections: Vec::new(),
             symbols: Vec::new(),
         }
+    }
+
+    pub fn get_id(&self) -> ObjectId {
+        self.id
     }
 
     pub fn get_file_name(&self) -> &str {
@@ -128,7 +146,7 @@ impl ObjectFile {
         }
     }
 
-    pub fn register_defined_symbols(&mut self, this_file_id: ObjectId) {
+    pub fn register_defined_symbols(&mut self) {
         for (i, symbol) in self.symbols.iter_mut().enumerate() {
             let esym = &self.elf_symbols[i];
             if esym.sym.is_undefined() {
@@ -138,7 +156,7 @@ impl ObjectFile {
                 continue;
             };
 
-            symbol.file = Some(this_file_id);
+            symbol.file = Some(self.get_id());
             // TODO: visibility
         }
     }

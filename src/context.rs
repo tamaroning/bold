@@ -1,29 +1,40 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use crate::input_section::ObjectFile;
+use crate::{
+    input_section::{ObjectFile, ObjectId},
+    output_section::{OutputSection, OutputSectionId},
+};
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
-pub struct ObjectId {
-    private: usize,
-}
-
-fn get_next_object_file_id() -> ObjectId {
-    static mut OBJECT_FILE_ID: usize = 0;
-    let id = unsafe { OBJECT_FILE_ID };
-    unsafe { OBJECT_FILE_ID += 1 };
-    ObjectId { private: id }
-}
+pub const COMMON_SECTION_NAMES: [&str; 12] = [
+    ".text",
+    ".data",
+    ".data.rel.ro",
+    ".rodata",
+    ".bss",
+    ".bss.rel.ro",
+    ".ctors",
+    ".dtors",
+    ".init_array",
+    ".fini_array",
+    ".tbss",
+    ".tdata",
+];
 
 pub struct Context {
     file_pool: HashMap<ObjectId, ObjectFile>,
+    output_sections: HashMap<OutputSectionId, OutputSection>,
 }
 
 impl Context {
     pub fn new(files: Vec<ObjectFile>) -> Context {
         Context {
-            file_pool: files
-                .into_iter()
-                .map(|f| (get_next_object_file_id(), f))
+            file_pool: files.into_iter().map(|f| (f.get_id(), f)).collect(),
+            output_sections: COMMON_SECTION_NAMES
+                .iter()
+                .map(|name| {
+                    let sec = OutputSection::new(name.to_string());
+                    (sec.get_id(), sec)
+                })
                 .collect(),
         }
     }
@@ -44,11 +55,38 @@ impl Context {
         self.file_pool.get_mut(&id).unwrap()
     }
 
-    pub fn resovle_symbols(&mut self) {
-        for (id, file) in self.file_pool.iter_mut() {
-            file.register_defined_symbols(*id);
-            file.register_undefined_symbols();
+    pub fn get_output_section(&self, id: OutputSectionId) -> &OutputSection {
+        self.output_sections.get(&id).unwrap()
+    }
+
+    pub fn get_output_section_mut(&mut self, id: OutputSectionId) -> &mut OutputSection {
+        self.output_sections.get_mut(&id).unwrap()
+    }
+
+    pub fn output_sections(&self) -> impl Iterator<Item = &OutputSection> {
+        self.output_sections.values()
+    }
+
+    pub fn output_sections_mut(&mut self) -> impl Iterator<Item = &mut OutputSection> {
+        self.output_sections.values_mut()
+    }
+
+    pub fn get_output_section_by_name(&self, name: &String) -> &OutputSection {
+        for section in self.output_sections() {
+            if section.get_name() == *name {
+                return section;
+            }
         }
+        panic!()
+    }
+
+    pub fn get_output_section_by_name_mut(&mut self, name: &String) -> &mut OutputSection {
+        for section in self.output_sections_mut() {
+            if section.get_name() == *name {
+                return section;
+            }
+        }
+        panic!()
     }
 
     pub fn dump(&self) {
