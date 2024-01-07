@@ -111,8 +111,20 @@ fn main() {
         }
     }
 
-    let OutputChunk::Ehdr(ehdr) = &*ehdr.borrow_mut() else {
+    let mut shdr_ref = shdr.borrow_mut();
+    if let OutputChunk::Shdr(shdr) = &mut *shdr_ref {
+        shdr.update_shdr(&output_chunks);
+    } else {
         unreachable!();
-    };
-    ehdr.copy_to(&mut buf);
+    }
+
+    log::info!("Copying ELF heades");
+    let ehdr_ref = ehdr.borrow_mut();
+    if let OutputChunk::Ehdr(ehdr) = &*ehdr_ref {
+        ehdr.copy_to(&mut buf);
+    } else {
+        unreachable!();
+    }
+    //shdr.copy_to(&mut buf);
+    //phdr.copy_to(&mut buf);
 }

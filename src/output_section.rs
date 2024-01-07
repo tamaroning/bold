@@ -14,6 +14,15 @@ pub enum OutputChunk {
     Section(Arc<RefCell<OutputSection>>),
 }
 
+impl OutputChunk {
+    pub fn is_header(&self) -> bool {
+        match self {
+            OutputChunk::Ehdr(_) | OutputChunk::Shdr(_) | OutputChunk::Phdr(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Chunk for OutputChunk {
     fn get_name(&self) -> String {
         match self {
@@ -163,6 +172,17 @@ impl OutputShdr {
         let view = &self.shdrs[0] as *const _ as *const u8;
         let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
         buf.copy_from_slice(slice);
+    }
+
+    pub fn update_shdr(&mut self, chunks: &Vec<Arc<RefCell<OutputChunk>>>) {
+        let mut num_section = 0;
+        for chunk in chunks.iter() {
+            if let Ok(chunk) = chunk.try_borrow() {
+                if !chunk.is_header() {
+                    num_section += 1;
+                }
+            }
+        }
     }
 }
 
