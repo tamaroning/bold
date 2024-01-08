@@ -7,6 +7,7 @@ use crate::{
 
 pub struct Linker {
     ctx: Context,
+    // Move this to the main function
     pub chunks: Vec<OutputChunk>,
 }
 
@@ -49,7 +50,6 @@ impl Linker {
                 self.ctx
                     .get_or_create_output_section_mut(&output_section_name, sh_type, sh_flags);
 
-            // Push the section to chunks at most once
             if output_section.sections.is_empty() {
                 let section = &output_section;
                 chunks.push(section.get_id());
@@ -64,13 +64,7 @@ impl Linker {
     }
 
     pub fn update_shdr(&mut self) {
-        let mut n = 1;
-        for chunk in self.chunks.iter() {
-            if !chunk.is_header() {
-                n += 1;
-            }
-        }
-
+        let n = self.calc_num_shdrs();
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 OutputChunk::Ehdr(_) => (),
@@ -78,8 +72,7 @@ impl Linker {
                     shdr.update_shdr(n);
                 }
                 OutputChunk::Phdr(_) => {
-                    // TODO:
-                    todo!()
+                    log::error!("TODO: update_shdr for Phdr");
                 }
                 OutputChunk::Section(_) => (),
                 _ => panic!(),
@@ -119,16 +112,33 @@ impl Linker {
             }
         }
 
+        let e_shnum = self.calc_num_shdrs() as u16;
+        // copy all other sections and headers
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 // FIXME: dummy
-                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, 0, 0),
-                OutputChunk::Shdr(_) => (),
-                OutputChunk::Phdr(chunk) => chunk.copy_to(buf),
-                OutputChunk::Section(_) => {
-                    todo!()
+                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, e_shnum, 0),
+                OutputChunk::Shdr(_) => {
+                    // Do nothing
+                }
+                OutputChunk::Phdr(_) => {
+                    log::error!("TODO: copy_buf for Phdr");
+                }
+                OutputChunk::Section(chunk) => {
+                    let chunk = self.ctx.get_output_section(*chunk);
+                    chunk.copy_buf(&self.ctx, buf);
                 }
             }
         }
+    }
+
+    fn calc_num_shdrs(&self) -> usize {
+        let mut n = 1;
+        for chunk in self.chunks.iter() {
+            if !chunk.is_header() {
+                n += 1;
+            }
+        }
+        n
     }
 }

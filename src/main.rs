@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::{
     context::Context,
     input_section::ObjectFile,
@@ -139,6 +141,12 @@ fn main() {
     }
 
     // Copy input sections to the output file
-    log::info!("Copying buffer");
+    log::info!("Copying sections to buffer");
     linker.copy_buf(&mut buf);
+
+    log::info!("Writing buffer to file");
+    let filepath = "a.o";
+    std::fs::write(filepath, &buf).unwrap();
+
+    log::debug!("Successfully wrote to {}", filepath);
 }

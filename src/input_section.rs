@@ -241,7 +241,7 @@ impl InputSection {
         self.offset = Some(offset);
     }
 
-    pub fn copy_to(&self, buf: &mut [u8]) {
+    pub fn copy_buf(&self, buf: &mut [u8]) {
         let offset = self.get_offset();
         let size = self.get_size();
         let data = &self.elf_section.data;

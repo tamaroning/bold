@@ -141,10 +141,10 @@ impl OutputEhdr {
         ehdr.e_entry = e_entry;
         ehdr.e_phoff = e_phoff;
         ehdr.e_shoff = e_shoff;
-        ehdr.e_ehsize = std::mem::size_of::<Elf64_Ehdr> as u16;
-        ehdr.e_phentsize = std::mem::size_of::<Elf64_Phdr> as u16;
+        ehdr.e_ehsize = std::mem::size_of::<Elf64_Ehdr>() as u16;
+        ehdr.e_phentsize = std::mem::size_of::<Elf64_Phdr>() as u16;
         ehdr.e_phnum = e_phnum;
-        ehdr.e_shentsize = std::mem::size_of::<Elf64_Shdr> as u16;
+        ehdr.e_shentsize = std::mem::size_of::<Elf64_Shdr>() as u16;
         ehdr.e_shnum = e_shnum;
         ehdr.e_shstrndx = e_shstrndx;
 
@@ -181,14 +181,6 @@ impl OutputPhdr {
         let mut common = ChunkInfo::new();
         common.shdr.sh_flags = SHF_ALLOC as u64;
         OutputPhdr { common }
-    }
-
-    fn get_size(&self) -> usize {
-        todo!()
-    }
-
-    pub fn copy_to(&self, buf: &mut [u8]) {
-        todo!()
     }
 }
 
@@ -247,10 +239,10 @@ impl OutputSection {
         self.size.unwrap()
     }
 
-    pub fn copy_to(&self, ctx: &Context, buf: &mut [u8]) {
+    pub fn copy_buf(&self, ctx: &Context, buf: &mut [u8]) {
         for input_section in self.sections.iter() {
             let input_section = ctx.get_input_section(*input_section);
-            input_section.copy_to(buf);
+            input_section.copy_buf(buf);
         }
     }
 
