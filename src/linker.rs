@@ -1,6 +1,6 @@
 use crate::{
     context::Context,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr},
 };
 
 pub struct Linker {
@@ -27,16 +27,7 @@ impl Linker {
         }
     }
 
-    pub fn push_common_chunks(&mut self) {
-        let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
-        let shdr = OutputChunk::Shdr(OutputShdr::new());
-        let phdr = OutputChunk::Phdr(OutputPhdr::new());
-        self.chunks.push(ehdr);
-        self.chunks.push(shdr);
-        self.chunks.push(phdr);
-    }
-
-    pub fn bin_input_sections(&mut self) {
+    pub fn bin_input_sections(&mut self) -> Vec<OutputSectionId> {
         let mut input_sections = vec![];
         for file in self.ctx.files_mut() {
             for input_section in file.get_input_sections().iter() {
@@ -46,6 +37,7 @@ impl Linker {
             }
         }
 
+        let mut chunks = vec![];
         for input_section_id in input_sections {
             let input_section = self.ctx.get_input_section(input_section_id);
             let output_section_name = input_section.output_section_name.clone();
@@ -56,10 +48,11 @@ impl Linker {
             // Push the section to chunks at most once
             if output_section.sections.is_empty() {
                 let section = &output_section;
-                self.chunks.push(OutputChunk::Section(section.get_id()));
+                chunks.push(section.get_id());
             }
             output_section.sections.push(input_section_id);
         }
+        chunks
     }
 
     pub fn assign_offsets(&mut self) -> usize {
@@ -69,6 +62,10 @@ impl Linker {
             filesize += chunk.get_size(&self.ctx);
         }
         filesize
+    }
+
+    pub fn update_shdr(&mut self) {
+        // TODO:
     }
 
     pub fn copy_regular_sections(&mut self, buf: &mut [u8]) {

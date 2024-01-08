@@ -33,7 +33,7 @@ impl OutputChunk {
             OutputChunk::Phdr(chunk) => chunk.offset.unwrap(),
             OutputChunk::Section(chunk) => {
                 let chunk = ctx.get_output_section(*chunk);
-                chunk.get_offset()
+                chunk.offset.unwrap()
             }
         }
     }
@@ -45,12 +45,11 @@ impl OutputChunk {
             OutputChunk::Phdr(chunk) => chunk.offset = Some(offset),
             OutputChunk::Section(osec_id) => {
                 let osec = ctx.get_output_section_mut(*osec_id);
-
                 let offset_start = offset;
-                osec.private_offset = Some(offset);
+                osec.offset = Some(offset);
 
-                for input_section in osec.sections.clone().iter() {
-                    let input_section = ctx.get_input_section_mut(*input_section);
+                for input_section in osec.sections.clone() {
+                    let input_section = ctx.get_input_section_mut(input_section);
                     input_section.set_offset(offset);
                     offset += input_section.get_size();
                 }
@@ -68,7 +67,7 @@ impl OutputChunk {
             OutputChunk::Phdr(chunk) => chunk.get_size(),
             OutputChunk::Section(chunk) => {
                 let chunk = ctx.get_output_section(*chunk);
-                chunk.size.unwrap()
+                chunk.get_size()
             }
         }
     }
@@ -212,7 +211,7 @@ pub struct OutputSection {
     id: OutputSectionId,
     name: String,
     pub sections: Vec<InputSectionId>,
-    private_offset: Option<usize>,
+    offset: Option<usize>,
     size: Option<usize>,
 }
 
@@ -222,7 +221,7 @@ impl OutputSection {
             id: get_next_output_section_id(),
             name,
             sections: vec![],
-            private_offset: None,
+            offset: None,
             size: None,
         }
     }
@@ -246,20 +245,8 @@ impl OutputSection {
         panic!("Unknown section: \"{}\"", input_section);
     }
 
-    fn get_offset(&self) -> usize {
-        self.private_offset.unwrap()
-    }
-
-    fn set_offset(&mut self, ctx: &mut Context, mut offset: usize) {
-        // TODO: alignment?
-        let offset_start = offset;
-        self.private_offset = Some(offset);
-        for input_section in self.sections.iter() {
-            let input_section = ctx.get_input_section_mut(*input_section);
-            input_section.set_offset(offset);
-            offset += input_section.get_size();
-        }
-        self.size = Some(offset - offset_start);
+    fn get_size(&self) -> usize {
+        self.size.unwrap()
     }
 
     pub fn copy_to(&self, ctx: &Context, buf: &mut [u8]) {

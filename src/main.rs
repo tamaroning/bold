@@ -1,4 +1,8 @@
-use crate::{context::Context, input_section::ObjectFile};
+use crate::{
+    context::Context,
+    input_section::ObjectFile,
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
+};
 
 mod context;
 mod input_section;
@@ -48,36 +52,80 @@ fn main() {
     // What is this?
 
     // Arrange common chunks e.g. ELF header, program headers
-    linker.push_common_chunks();
+    let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
+    let shdr = OutputChunk::Shdr(OutputShdr::new());
+    let phdr = OutputChunk::Phdr(OutputPhdr::new());
 
     // Bin input sections into output sections
-    // and push them to chunks
     // mold: bin_sections
     log::info!("Merging sections");
-    linker.bin_input_sections();
+    let output_sections = linker.bin_input_sections();
 
     // Assign offsets to input sections
     // mold: set_isec_offsets
     log::info!("Assigning offsets");
     let filesize = linker.assign_offsets();
 
+    // Add sections to the section lists
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1214
+    // TODO: merged sections?
+    for output_section in output_sections {
+        let output_section = linker.get_ctx().get_output_section(output_section);
+        linker
+            .chunks
+            .push(OutputChunk::Section(output_section.get_id()));
+    }
+
     log::debug!("Chunks:");
     for chunk in linker.chunks.iter() {
         log::debug!("\t{}", chunk.as_string(&linker.get_ctx()));
     }
 
-    // Sort the sections by section flags so that we'll have to create
+    // TODO: Sort the sections by section flags so that we'll have to create
     // as few segments as possible.
-    // TODO: mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1224
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1224
 
-    // Convert weak symbols to absolute symbols with value 0
-    // TODO: mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1236
+    // TODO: Convert weak symbols to absolute symbols with value 0
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1236
 
-    // Make sure that all symbols have been resolved
-    // TODO: mold: check_duplicate_symbols
+    // TODO: Make sure that all symbols have been resolved
+    // mold: check_duplicate_symbols
 
-    // Copy shared object name strings to .dynstr.
-    // TODO: mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1249
+    // TODO: Copy shared object name strings to .dynstr.
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1249
+
+    // Copy DT_RUNPATH strings to .dynstr.
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1254
+
+    // Add headers and sections that have to be at the beginning
+    // or the ending of a file.
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1256
+    linker.chunks.insert(0, ehdr);
+    linker.chunks.insert(1, phdr);
+    linker.chunks.insert(2, shdr);
+    // TODO: interp
+
+    // TODO: Scan relocations to find symbols that need entries in .got, .plt,
+    // .got.plt, .dynsym, .dynstr, etc.
+    // mold: scan_rels
+
+    // TODO: Put symbols to .dynsym.
+    // mold: export_dynamic
+
+    // TODO: Sort .dynsym contents. Beyond this point, no symbol should be
+    // added to .dynsym.
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1271
+
+    // TODO: Fill .gnu.version and .gnu.version_r section contents.
+    // mold: fill_symbol_versions
+
+    // TODO: Compute .symtab and .strtab sizes for each file.
+    // mold: ObjectFile::compute_symtab
+
+    // TODO: eh_frame
+    // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1283
+
+    linker.update_shdr();
 
     // Create an output file
 
