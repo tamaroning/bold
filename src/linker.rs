@@ -75,7 +75,17 @@ impl Linker {
                     log::error!("TODO: update_shdr for Phdr");
                 }
                 OutputChunk::Section(_) => (),
-                _ => panic!(),
+            }
+        }
+    }
+
+    pub fn set_section_indices(&mut self) {
+        let mut shndx = 0;
+        for chunk in self.chunks.iter_mut() {
+            if !chunk.is_header() {
+                let common = chunk.get_common_mut(&mut self.ctx);
+                common.shndx = Some(shndx);
+                shndx += 1;
             }
         }
     }

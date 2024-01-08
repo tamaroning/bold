@@ -82,6 +82,8 @@ fn main() {
     // as few segments as possible.
     // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1224
 
+    // Beyond this point, no new symbols will be added to the result.
+
     // TODO: Convert weak symbols to absolute symbols with value 0
     // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1236
 
@@ -118,6 +120,13 @@ fn main() {
 
     // TODO: Compute .symtab and .strtab sizes for each file.
     // mold: ObjectFile::compute_symtab
+
+    // TODO: delete empty output sections
+
+    // FIXME: update_shdr should be called here?
+
+    // Set section indices
+    linker.set_section_indices();
 
     // TODO: eh_frame
     // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1283
