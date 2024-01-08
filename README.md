@@ -2,6 +2,10 @@
 
 An experimental x86-64 linker
 
+## Status
+
+Not usable yet
+
 # Run
 
 ```bash
