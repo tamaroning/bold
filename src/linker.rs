@@ -207,6 +207,5 @@ fn calc_sh_name_from_shstrtab(shstrtab_content: &[u8], section_name: &str) -> us
         }
         i += 1;
     }
-    log::warn!("sh_name ={}", sh_name);
     sh_name
 }
