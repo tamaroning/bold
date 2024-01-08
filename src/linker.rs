@@ -1,4 +1,4 @@
-use elf::section::Elf64_Shdr;
+use elf::section::{self, Elf64_Shdr};
 
 use crate::{
     context::Context,
@@ -64,17 +64,29 @@ impl Linker {
     }
 
     pub fn update_shdr(&mut self) {
-        let n = self.calc_num_shdrs();
+        // Set sh_name to all shdrs
+        let shstrtab_content = self.get_shstrtab_content();
+        for chunk in self.chunks.iter_mut() {
+            if !chunk.is_header() {
+                let name = chunk.get_section_name(&self.ctx);
+                let shdr = &mut chunk.get_common_mut(&mut self.ctx).shdr;
+                shdr.sh_name = calc_sh_name_from_shstrtab(&shstrtab_content, &name) as u32;
+            }
+        }
+
+        let num_shdrs = self.calc_num_shdrs();
+        let shstrtab_size = shstrtab_content.len() as u64;
         for chunk in self.chunks.iter_mut() {
             match chunk {
-                OutputChunk::Ehdr(_) => (),
+                OutputChunk::Ehdr(_) => (/* Do nothing */),
                 OutputChunk::Shdr(shdr) => {
-                    shdr.update_shdr(n);
+                    shdr.update_shdr(num_shdrs);
                 }
                 OutputChunk::Phdr(_) => {
                     log::error!("TODO: update_shdr for Phdr");
                 }
-                OutputChunk::Section(_) => (),
+                OutputChunk::Section(_) => (/* Do nothing */),
+                OutputChunk::Shstrtab(shstrtab) => shstrtab.update_shdr(shstrtab_size),
             }
         }
     }
@@ -124,11 +136,25 @@ impl Linker {
         }
 
         let e_shnum = self.calc_num_shdrs() as u16;
+        let e_shstrndx = self
+            .chunks
+            .iter()
+            .find_map(|chunk| {
+                if let OutputChunk::Shstrtab(chunk) = chunk {
+                    Some(chunk.common.shndx.unwrap() as u16)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let shstrtab_content = self.get_shstrtab_content();
         // copy all other sections and headers
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 // FIXME: dummy
-                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, e_shoff, 0, e_shnum, 0),
+                OutputChunk::Ehdr(chunk) => {
+                    chunk.copy_buf(buf, 0, 0, e_shoff, 0, e_shnum, e_shstrndx)
+                }
                 OutputChunk::Shdr(_) => {
                     // Do nothing
                 }
@@ -138,6 +164,9 @@ impl Linker {
                 OutputChunk::Section(chunk) => {
                     let chunk = self.ctx.get_output_section(*chunk);
                     chunk.copy_buf(&self.ctx, buf);
+                }
+                OutputChunk::Shstrtab(chunk) => {
+                    chunk.copy_buf(buf, &shstrtab_content);
                 }
             }
         }
@@ -152,4 +181,32 @@ impl Linker {
         }
         n
     }
+
+    fn get_shstrtab_content(&self) -> Vec<u8> {
+        let mut content = vec![0];
+        for chunk in &self.chunks {
+            if !chunk.is_header() {
+                let name = chunk.get_section_name(&self.ctx);
+                content.extend_from_slice(name.as_bytes());
+                content.push(0);
+            }
+        }
+        content
+    }
+}
+
+fn calc_sh_name_from_shstrtab(shstrtab_content: &[u8], section_name: &str) -> usize {
+    let mut section_name = unsafe { section_name.to_string().as_bytes_mut() }.to_vec();
+    section_name.push(0);
+    let mut sh_name = 0;
+    let mut i = 0;
+    while i < shstrtab_content.len() {
+        if shstrtab_content[i..].starts_with(&section_name) {
+            sh_name = i;
+            break;
+        }
+        i += 1;
+    }
+    log::warn!("sh_name ={}", sh_name);
+    sh_name
 }

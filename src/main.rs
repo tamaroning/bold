@@ -41,6 +41,11 @@ fn main() {
 
     let mut linker = linker::Linker::new(ctx);
 
+    let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
+    let shdr = OutputChunk::Shdr(OutputShdr::new());
+    let phdr = OutputChunk::Phdr(OutputPhdr::new());
+    let shstrtab = OutputChunk::Shstrtab(output_section::Shstrtab::new());
+
     // Register (un)defined symbols
     log::info!("Resolving symbols");
     linker.resolve_symbols();
@@ -52,11 +57,6 @@ fn main() {
 
     // Eliminate duplicate comdat groups
     // What is this?
-
-    // Arrange common chunks e.g. ELF header, program headers
-    let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
-    let shdr = OutputChunk::Shdr(OutputShdr::new());
-    let phdr = OutputChunk::Phdr(OutputPhdr::new());
 
     // Bin input sections into output sections
     // mold: bin_sections
@@ -102,6 +102,7 @@ fn main() {
     linker.chunks.insert(0, ehdr);
     linker.chunks.insert(1, phdr);
     linker.chunks.insert(2, shdr);
+    linker.chunks.push(shstrtab);
     // TODO: interp
 
     // TODO: Scan relocations to find symbols that need entries in .got, .plt,
@@ -146,7 +147,12 @@ fn main() {
 
     log::debug!("Chunks:");
     for chunk in linker.chunks.iter() {
-        log::debug!("\t{}", chunk.as_string(&linker.get_ctx()));
+        let shndx = chunk.get_common(&linker.get_ctx()).shndx;
+        log::debug!(
+            "\t[{}]: {}",
+            shndx.map(|x| x.to_string()).unwrap_or("-".to_string()),
+            chunk.as_string(&linker.get_ctx())
+        );
     }
 
     // Copy input sections to the output file

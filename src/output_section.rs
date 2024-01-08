@@ -1,4 +1,9 @@
-use elf::{abi::SHF_ALLOC, file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
+use elf::{
+    abi::{SHF_ALLOC, SHT_STRTAB},
+    file::Elf64_Ehdr,
+    section::Elf64_Shdr,
+    segment::Elf64_Phdr,
+};
 
 use crate::{
     context::{Context, COMMON_SECTION_NAMES},
@@ -11,6 +16,7 @@ pub enum OutputChunk {
     Shdr(OutputShdr),
     Phdr(OutputPhdr),
     Section(OutputSectionId),
+    Shstrtab(Shstrtab),
 }
 
 impl OutputChunk {
@@ -23,6 +29,7 @@ impl OutputChunk {
                 let osec = ctx.get_output_section(*osec_id);
                 osec.get_common()
             }
+            OutputChunk::Shstrtab(chunk) => &chunk.common,
         }
     }
 
@@ -35,6 +42,20 @@ impl OutputChunk {
                 let osec = ctx.get_output_section_mut(*osec_id);
                 osec.get_common_mut()
             }
+            OutputChunk::Shstrtab(chunk) => &mut chunk.common,
+        }
+    }
+
+    pub fn get_section_name(&self, ctx: &Context) -> String {
+        match self {
+            OutputChunk::Ehdr(_) => panic!(),
+            OutputChunk::Shdr(_) => panic!(),
+            OutputChunk::Phdr(_) => panic!(),
+            OutputChunk::Section(osec_id) => {
+                let osec = ctx.get_output_section(*osec_id);
+                osec.get_name()
+            }
+            OutputChunk::Shstrtab(_) => ".shstrtab".to_owned(),
         }
     }
 
@@ -57,6 +78,7 @@ impl OutputChunk {
                 let osec = ctx.get_output_section_mut(*osec_id);
                 osec.common.shdr.sh_size = offset - offset_start;
             }
+            OutputChunk::Shstrtab(chunk) => chunk.common.shdr.sh_offset = offset,
         }
     }
 
@@ -69,13 +91,14 @@ impl OutputChunk {
 
     pub fn as_string(&self, ctx: &Context) -> String {
         (match self {
-            OutputChunk::Ehdr(_) => "Ehdr".to_owned(),
-            OutputChunk::Shdr(_) => "Shdr".to_owned(),
-            OutputChunk::Phdr(_) => "Phdr".to_owned(),
+            OutputChunk::Ehdr(_) => "Ehdr ".to_owned(),
+            OutputChunk::Shdr(_) => "Shdr ".to_owned(),
+            OutputChunk::Phdr(_) => "Phdr ".to_owned(),
             OutputChunk::Section(chunk) => {
                 let chunk = ctx.get_output_section(*chunk);
                 chunk.as_string()
             }
+            OutputChunk::Shstrtab(_) => "Shstrtab ".to_owned(),
         }) + &self.get_common(ctx).as_string()
     }
 }
@@ -95,8 +118,12 @@ impl ChunkInfo {
 
     pub fn as_string(&self) -> String {
         format!(
-            "(sh_type={}, sh_flags={}, sh_offset={}, sh_size={})",
-            self.shdr.sh_type, self.shdr.sh_flags, self.shdr.sh_offset, self.shdr.sh_size
+            "(sh_type={}, sh_flags={}, sh_offset={}, sh_size={}, sh_name={})",
+            self.shdr.sh_type,
+            self.shdr.sh_flags,
+            self.shdr.sh_offset,
+            self.shdr.sh_size,
+            self.shdr.sh_name
         )
     }
 }
@@ -135,7 +162,7 @@ impl OutputEhdr {
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = EV_CURRENT;
-        ehdr.e_type = ET_EXEC; // TODO: PIE
+        ehdr.e_type = ET_EXEC; // FIXME: PIE
         ehdr.e_machine = EM_X86_64;
         ehdr.e_version = EV_CURRENT as u32;
         ehdr.e_entry = e_entry;
@@ -258,4 +285,25 @@ pub fn get_output_section_name(input_section: &String) -> String {
         }
     }
     panic!("Unknown section: \"{}\"", input_section);
+}
+
+pub struct Shstrtab {
+    pub common: ChunkInfo,
+}
+
+impl Shstrtab {
+    pub fn new() -> Shstrtab {
+        let mut common = ChunkInfo::new();
+        common.shdr.sh_type = SHT_STRTAB;
+        Shstrtab { common }
+    }
+
+    pub fn update_shdr(&mut self, shstrtab_size: u64) {
+        self.common.shdr.sh_size = shstrtab_size;
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8], data: &[u8]) {
+        let offset = self.common.shdr.sh_offset as usize;
+        buf[offset..offset + data.len()].copy_from_slice(data);
+    }
 }
