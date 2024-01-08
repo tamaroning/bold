@@ -202,7 +202,6 @@ pub struct OutputSection {
     common: ChunkInfo,
     name: String,
     pub sections: Vec<InputSectionId>,
-    size: Option<usize>,
 }
 
 impl OutputSection {
@@ -215,7 +214,6 @@ impl OutputSection {
             common,
             name,
             sections: vec![],
-            size: None,
         }
     }
 
@@ -233,10 +231,6 @@ impl OutputSection {
 
     pub fn get_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn get_size(&self) -> usize {
-        self.size.unwrap()
     }
 
     pub fn copy_buf(&self, ctx: &Context, buf: &mut [u8]) {
