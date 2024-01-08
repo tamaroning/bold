@@ -91,7 +91,7 @@ impl Linker {
 
     pub fn copy_buf(&mut self, buf: &mut [u8]) {
         // copy all shdrs to buf
-        let mut shdr_ofs = self
+        let e_shoff = self
             .chunks
             .iter()
             .find_map(|chunk| {
@@ -102,6 +102,7 @@ impl Linker {
                 }
             })
             .unwrap();
+        let mut shdr_ofs = e_shoff;
         for chunk in &self.chunks {
             if !chunk.is_header() {
                 let size = std::mem::size_of::<Elf64_Shdr>();
@@ -117,7 +118,7 @@ impl Linker {
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 // FIXME: dummy
-                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, e_shnum, 0),
+                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, e_shoff, 0, e_shnum, 0),
                 OutputChunk::Shdr(_) => {
                     // Do nothing
                 }
@@ -133,7 +134,7 @@ impl Linker {
     }
 
     fn calc_num_shdrs(&self) -> usize {
-        let mut n = 1;
+        let mut n = 0;
         for chunk in self.chunks.iter() {
             if !chunk.is_header() {
                 n += 1;
