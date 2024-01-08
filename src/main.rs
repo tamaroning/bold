@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use crate::{
     context::Context,
     input_section::ObjectFile,
@@ -147,11 +145,11 @@ fn main() {
 
     log::debug!("Chunks:");
     for chunk in linker.chunks.iter() {
-        let shndx = chunk.get_common(&linker.get_ctx()).shndx;
+        let shndx = chunk.get_common(linker.get_ctx()).shndx;
         log::debug!(
             "\t[{}]: {}",
             shndx.map(|x| x.to_string()).unwrap_or("-".to_string()),
-            chunk.as_string(&linker.get_ctx())
+            chunk.as_string(linker.get_ctx())
         );
     }
 

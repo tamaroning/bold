@@ -1,4 +1,4 @@
-use elf::section::{self, Elf64_Shdr};
+use elf::section::Elf64_Shdr;
 
 use crate::{
     context::Context,

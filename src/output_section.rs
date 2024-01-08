@@ -83,10 +83,10 @@ impl OutputChunk {
     }
 
     pub fn is_header(&self) -> bool {
-        match self {
-            OutputChunk::Ehdr(_) | OutputChunk::Shdr(_) | OutputChunk::Phdr(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            OutputChunk::Ehdr(_) | OutputChunk::Shdr(_) | OutputChunk::Phdr(_)
+        )
     }
 
     pub fn as_string(&self, ctx: &Context) -> String {
@@ -142,6 +142,7 @@ impl OutputEhdr {
 }
 
 impl OutputEhdr {
+    #[allow(clippy::too_many_arguments)]
     pub fn copy_buf(
         &self,
         buf: &mut [u8],

@@ -84,7 +84,7 @@ impl ObjectFile {
             // TODO: remove clone()
             self.elf_sections.push(Arc::new(ElfSection {
                 name: name.to_string(),
-                header: shdr.clone(),
+                header: shdr,
                 data: file.section_data(&shdr).unwrap().0.to_vec(),
             }));
         }
@@ -136,7 +136,7 @@ impl ObjectFile {
         self.symbols.resize(self.elf_symbols.len(), None);
         for (i, elf_symbol) in self.elf_symbols.iter().enumerate() {
             // Skip until reaching the first global
-            if i < self.first_global as usize {
+            if i < self.first_global {
                 continue;
             }
             self.symbols[i] = Some(Symbol {
@@ -167,7 +167,7 @@ impl ObjectFile {
             if esym.sym.is_undefined() {
                 continue;
             }
-            let Some(symbol) = symbol else {
+            let Some(_) = symbol else {
                 continue;
             };
 
