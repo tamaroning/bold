@@ -1,5 +1,3 @@
-use std::{cell::RefCell, sync::Arc};
-
 use elf::{abi::SHF_ALLOC, file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr};
 
 use crate::{
@@ -7,9 +5,6 @@ use crate::{
     dummy,
     input_section::InputSectionId,
 };
-
-// TODO: We need to add some sort of Elf_Shdr to this
-// https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L417
 
 pub enum OutputChunk {
     Ehdr(OutputEhdr),
@@ -19,34 +14,39 @@ pub enum OutputChunk {
 }
 
 impl OutputChunk {
-    pub fn is_header(&self) -> bool {
+    pub fn get_common<'a>(&'a self, ctx: &'a Context) -> &'a ChunkInfo {
         match self {
-            OutputChunk::Ehdr(_) | OutputChunk::Shdr(_) | OutputChunk::Phdr(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn get_offset(&self, ctx: &Context) -> usize {
-        match self {
-            OutputChunk::Ehdr(chunk) => chunk.offset.unwrap(),
-            OutputChunk::Shdr(chunk) => chunk.offset.unwrap(),
-            OutputChunk::Phdr(chunk) => chunk.offset.unwrap(),
-            OutputChunk::Section(chunk) => {
-                let chunk = ctx.get_output_section(*chunk);
-                chunk.offset.unwrap()
+            OutputChunk::Ehdr(chunk) => &chunk.common,
+            OutputChunk::Shdr(chunk) => &chunk.common,
+            OutputChunk::Phdr(chunk) => &chunk.common,
+            OutputChunk::Section(osec_id) => {
+                let osec = ctx.get_output_section(*osec_id);
+                osec.get_common()
             }
         }
     }
 
-    pub fn set_offset(&mut self, ctx: &mut Context, mut offset: usize) {
+    pub fn get_common_mut<'a>(&'a mut self, ctx: &'a mut Context) -> &'a mut ChunkInfo {
         match self {
-            OutputChunk::Ehdr(chunk) => chunk.offset = Some(offset),
-            OutputChunk::Shdr(chunk) => chunk.offset = Some(offset),
-            OutputChunk::Phdr(chunk) => chunk.offset = Some(offset),
+            OutputChunk::Ehdr(chunk) => &mut chunk.common,
+            OutputChunk::Shdr(chunk) => &mut chunk.common,
+            OutputChunk::Phdr(chunk) => &mut chunk.common,
+            OutputChunk::Section(osec_id) => {
+                let osec = ctx.get_output_section_mut(*osec_id);
+                osec.get_common_mut()
+            }
+        }
+    }
+
+    pub fn set_offset(&mut self, ctx: &mut Context, mut offset: u64) {
+        match self {
+            OutputChunk::Ehdr(chunk) => chunk.common.shdr.sh_offset = offset,
+            OutputChunk::Shdr(chunk) => chunk.common.shdr.sh_offset = offset,
+            OutputChunk::Phdr(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Section(osec_id) => {
                 let osec = ctx.get_output_section_mut(*osec_id);
                 let offset_start = offset;
-                osec.offset = Some(offset);
+                osec.common.shdr.sh_offset = offset;
 
                 for input_section in osec.sections.clone() {
                     let input_section = ctx.get_input_section_mut(input_section);
@@ -55,25 +55,32 @@ impl OutputChunk {
                 }
 
                 let osec = ctx.get_output_section_mut(*osec_id);
-                osec.size = Some(offset - offset_start);
+                osec.common.shdr.sh_size = offset - offset_start;
             }
         }
     }
 
-    pub fn get_size(&self, ctx: &Context) -> usize {
+    pub fn is_header(&self) -> bool {
         match self {
-            OutputChunk::Ehdr(_) => OutputEhdr::get_size(),
-            OutputChunk::Shdr(chunk) => chunk.get_size(),
-            OutputChunk::Phdr(chunk) => chunk.get_size(),
-            OutputChunk::Section(chunk) => {
-                let chunk = ctx.get_output_section(*chunk);
-                chunk.get_size()
+            OutputChunk::Ehdr(_) | OutputChunk::Shdr(_) | OutputChunk::Phdr(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8]) {
+        match self {
+            // FIXME: dummy
+            OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, 0, 0),
+            OutputChunk::Shdr(chunk) => chunk.copy_to(buf),
+            OutputChunk::Phdr(chunk) => chunk.copy_to(buf),
+            OutputChunk::Section(_) => {
+                todo!()
             }
         }
     }
 
     pub fn as_string(&self, ctx: &Context) -> String {
-        match self {
+        (match self {
             OutputChunk::Ehdr(_) => "Ehdr".to_owned(),
             OutputChunk::Shdr(_) => "Shdr".to_owned(),
             OutputChunk::Phdr(_) => "Phdr".to_owned(),
@@ -81,7 +88,7 @@ impl OutputChunk {
                 let chunk = ctx.get_output_section(*chunk);
                 chunk.as_string()
             }
-        }
+        }) + &self.get_common(ctx).as_string()
     }
 }
 
@@ -97,54 +104,72 @@ impl ChunkInfo {
         shdr.sh_addralign = 1;
         ChunkInfo { shdr, shndx: None }
     }
+
+    pub fn as_string(&self) -> String {
+        format!(
+            "(sh_type={}, sh_flags={}, sh_offset={}, sh_size={})",
+            self.shdr.sh_type, self.shdr.sh_flags, self.shdr.sh_offset, self.shdr.sh_size
+        )
+    }
 }
 
 pub struct OutputEhdr {
     common: ChunkInfo,
-    offset: Option<usize>,
 }
 
 impl OutputEhdr {
     pub fn new() -> OutputEhdr {
         let mut common = ChunkInfo::new();
         common.shdr.sh_flags = SHF_ALLOC as u64;
-        common.shdr.sh_size = Self::get_size() as u64;
-        OutputEhdr {
-            common,
-            offset: None,
-        }
+        common.shdr.sh_size = std::mem::size_of::<Elf64_Ehdr>() as u64;
+        OutputEhdr { common }
     }
 }
 
 impl OutputEhdr {
-    pub fn copy_to(&self, buf: &mut [u8]) {
+    pub fn copy_buf(
+        &self,
+        buf: &mut [u8],
+        e_entry: u64,
+        e_phoff: u64,
+        e_shoff: u64,
+        e_phnum: u16,
+        e_shnum: u16,
+        e_shstrndx: u16,
+    ) {
         use elf::abi::*;
 
         let mut ehdr: Elf64_Ehdr = dummy!(Elf64_Ehdr);
+        ehdr.e_ident[EI_MAG0] = ELFMAG0;
+        ehdr.e_ident[EI_MAG1] = ELFMAG1;
+        ehdr.e_ident[EI_MAG2] = ELFMAG2;
+        ehdr.e_ident[EI_MAG3] = ELFMAG3;
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = EV_CURRENT;
         ehdr.e_type = ET_EXEC; // TODO: PIE
         ehdr.e_machine = EM_X86_64;
         ehdr.e_version = EV_CURRENT as u32;
-        ehdr.e_entry = 0x400000; // TODO: entry point
-                                 // TODO: rest of the fields
+        ehdr.e_entry = e_entry;
+        ehdr.e_phoff = e_phoff;
+        ehdr.e_shoff = e_shoff;
+        ehdr.e_ehsize = std::mem::size_of::<Elf64_Ehdr> as u16;
+        ehdr.e_phentsize = std::mem::size_of::<Elf64_Phdr> as u16;
+        ehdr.e_phnum = e_phnum;
+        ehdr.e_shentsize = std::mem::size_of::<Elf64_Shdr> as u16;
+        ehdr.e_shnum = e_shnum;
+        ehdr.e_shstrndx = e_shstrndx;
 
         let view = &ehdr as *const _ as *const u8;
-        let offset = self.offset.unwrap();
-        let size = Self::get_size();
+        let offset = self.common.shdr.sh_offset as usize;
+        let size = std::mem::size_of::<Elf64_Ehdr>();
         let data = unsafe { std::slice::from_raw_parts(view, size) };
         buf[offset..offset + size].copy_from_slice(data);
-    }
-
-    fn get_size() -> usize {
-        std::mem::size_of::<Elf64_Ehdr>()
     }
 }
 
 pub struct OutputShdr {
     common: ChunkInfo,
-    offset: Option<usize>,
 
     // TODO: remove
     shdrs: Vec<Elf64_Shdr>,
@@ -156,7 +181,6 @@ impl OutputShdr {
         common.shdr.sh_flags = SHF_ALLOC as u64;
         OutputShdr {
             common,
-            offset: None,
             shdrs: vec![],
         }
     }
@@ -166,29 +190,17 @@ impl OutputShdr {
             return;
         }
         let view = &self.shdrs[0] as *const _ as *const u8;
-        let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
+        let slice = unsafe { std::slice::from_raw_parts(view, self.common.shdr.sh_size as usize) };
         buf.copy_from_slice(slice);
     }
 
-    pub fn update_shdr(&mut self, chunks: &Vec<Arc<RefCell<OutputChunk>>>) {
-        let mut num_section = 0;
-        for chunk in chunks.iter() {
-            if let Ok(chunk) = chunk.try_borrow() {
-                if !chunk.is_header() {
-                    num_section += 1;
-                }
-            }
-        }
-    }
-
-    fn get_size(&self) -> usize {
-        self.shdrs.len() * std::mem::size_of::<Elf64_Shdr>()
+    pub fn update_shdr(&mut self, n: usize) {
+        self.common.shdr.sh_size = (n * std::mem::size_of::<Elf64_Shdr>()) as u64;
     }
 }
 
 pub struct OutputPhdr {
     common: ChunkInfo,
-    offset: Option<usize>,
     phdrs: Vec<Elf64_Phdr>,
 }
 
@@ -198,7 +210,6 @@ impl OutputPhdr {
         common.shdr.sh_flags = SHF_ALLOC as u64;
         OutputPhdr {
             common,
-            offset: None,
             phdrs: vec![],
         }
     }
@@ -239,7 +250,6 @@ pub struct OutputSection {
     common: ChunkInfo,
     name: String,
     pub sections: Vec<InputSectionId>,
-    offset: Option<usize>,
     size: Option<usize>,
 }
 
@@ -253,7 +263,6 @@ impl OutputSection {
             common,
             name,
             sections: vec![],
-            offset: None,
             size: None,
         }
     }
@@ -287,10 +296,8 @@ impl OutputSection {
 
     fn as_string(&self) -> String {
         format!(
-            "OutputSection \"{}\" (sh_type={}, sh_flags={}, containing {} sections)",
+            "OutputSection \"{}\" (containing {} sections)",
             self.name,
-            self.common.shdr.sh_type,
-            self.common.shdr.sh_flags,
             self.sections.len()
         )
     }

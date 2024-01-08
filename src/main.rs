@@ -64,7 +64,7 @@ fn main() {
     // Assign offsets to input sections
     // mold: set_isec_offsets
     log::info!("Assigning offsets");
-    let filesize = linker.assign_offsets();
+    linker.assign_isec_offsets();
 
     // Add sections to the section lists
     // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L1214
@@ -74,11 +74,6 @@ fn main() {
         linker
             .chunks
             .push(OutputChunk::Section(output_section.get_id()));
-    }
-
-    log::debug!("Chunks:");
-    for chunk in linker.chunks.iter() {
-        log::debug!("\t{}", chunk.as_string(&linker.get_ctx()));
     }
 
     // TODO: Sort the sections by section flags so that we'll have to create
@@ -127,13 +122,23 @@ fn main() {
 
     linker.update_shdr();
 
+    log::debug!("Assigning offsets");
+    let filesize = linker.assign_osec_offsets();
+    log::debug!("File size: {}", filesize);
+
     // Create an output file
 
     // Allocate a buffer for the output file
     // TODO: We should not zero-clear the buffer for performance reasons
     let mut buf: Vec<u8> = vec![];
-    buf.resize(filesize, 0);
+    buf.resize(filesize as usize, 0);
+
+    log::debug!("Chunks:");
+    for chunk in linker.chunks.iter() {
+        log::debug!("\t{}", chunk.as_string(&linker.get_ctx()));
+    }
 
     // Copy input sections to the output file
-    log::info!("Copying regular sections");
+    log::info!("Copying buffer");
+    linker.copy_buf(&mut buf);
 }

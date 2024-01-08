@@ -204,7 +204,8 @@ fn get_next_input_section_id() -> InputSectionId {
 pub struct InputSection {
     id: InputSectionId,
     pub elf_section: Arc<ElfSection>,
-    offset: Option<usize>,
+    /// Offset from the beginning of the output file
+    offset: Option<u64>,
 }
 
 impl InputSection {
@@ -224,15 +225,19 @@ impl InputSection {
         &self.elf_section.name
     }
 
-    pub fn get_size(&self) -> usize {
-        self.elf_section.data.len()
+    pub fn get_size(&self) -> u64 {
+        assert_eq!(
+            self.elf_section.data.len() as u64,
+            self.elf_section.header.sh_size
+        );
+        self.elf_section.header.sh_size
     }
 
-    fn get_offset(&self) -> usize {
+    fn get_offset(&self) -> u64 {
         self.offset.unwrap()
     }
 
-    pub fn set_offset(&mut self, offset: usize) {
+    pub fn set_offset(&mut self, offset: u64) {
         self.offset = Some(offset);
     }
 
@@ -240,7 +245,7 @@ impl InputSection {
         let offset = self.get_offset();
         let size = self.get_size();
         let data = &self.elf_section.data;
-        buf[offset..offset + size].copy_from_slice(data);
+        buf[offset as usize..(offset + size) as usize].copy_from_slice(data);
     }
 }
 

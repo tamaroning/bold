@@ -57,33 +57,45 @@ impl Linker {
         chunks
     }
 
-    pub fn assign_offsets(&mut self) -> usize {
+    pub fn assign_isec_offsets(&mut self) {
+        let _ = self.assign_osec_offsets();
+    }
+
+    pub fn update_shdr(&mut self) {
+        let mut n = 1;
+        for chunk in self.chunks.iter() {
+            if !chunk.is_header() {
+                n += 1;
+            }
+        }
+
+        for chunk in self.chunks.iter_mut() {
+            match chunk {
+                OutputChunk::Ehdr(_) => (),
+                OutputChunk::Shdr(shdr) => {
+                    shdr.update_shdr(n);
+                }
+                OutputChunk::Phdr(_) => {
+                    // TODO:
+                }
+                OutputChunk::Section(_) => (),
+                _ => panic!(),
+            }
+        }
+    }
+
+    pub fn assign_osec_offsets(&mut self) -> u64 {
         let mut filesize = 0;
         for chunk in self.chunks.iter_mut() {
             chunk.set_offset(&mut self.ctx, filesize);
-            filesize += chunk.get_size(&self.ctx);
+            filesize += chunk.get_common(&self.ctx).shdr.sh_size;
         }
         filesize
     }
 
-    pub fn update_shdr(&mut self) {
-        // TODO:
-    }
-
-    pub fn copy_regular_sections(&mut self, buf: &mut [u8]) {
+    pub fn copy_buf(&mut self, buf: &mut [u8]) {
         for chunk in self.chunks.iter_mut() {
-            let size = chunk.get_size(&self.ctx);
-            let offset = chunk.get_offset(&self.ctx);
-            if let OutputChunk::Section(section) = chunk {
-                let section = self.ctx.get_output_section(*section);
-                log::debug!(
-                    "\tCopy {} bytes of {} to offset {}",
-                    size,
-                    section.get_name(),
-                    offset,
-                );
-                section.copy_to(&self.ctx, buf);
-            }
+            chunk.copy_buf(buf);
         }
     }
 }
