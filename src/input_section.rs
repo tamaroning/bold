@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{context::Context, dummy, output_section::OutputSection};
+use crate::{context::Context, dummy};
 use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]

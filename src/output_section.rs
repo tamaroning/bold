@@ -74,12 +74,12 @@ impl OutputChunk {
 
     pub fn as_string(&self, ctx: &Context) -> String {
         match self {
-            OutputChunk::Ehdr(chunk) => "Ehdr".to_owned(),
-            OutputChunk::Shdr(chunk) => "Shdr".to_owned(),
-            OutputChunk::Phdr(chunk) => "Phdr".to_owned(),
+            OutputChunk::Ehdr(_) => "Ehdr".to_owned(),
+            OutputChunk::Shdr(_) => "Shdr".to_owned(),
+            OutputChunk::Phdr(_) => "Phdr".to_owned(),
             OutputChunk::Section(chunk) => {
                 let chunk = ctx.get_output_section(*chunk);
-                chunk.as_string(ctx)
+                chunk.as_string()
             }
         }
     }
@@ -285,17 +285,14 @@ impl OutputSection {
         }
     }
 
-    fn as_string(&self, ctx: &Context) -> String {
-        let input_sections_str = self
-            .sections
-            .iter()
-            .map(|input_section| {
-                let input_section = ctx.get_input_section(*input_section);
-                format!("\"{}\"", input_section.elf_section.name.clone())
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("OutputSection \"{}\" [{}]", self.name, input_sections_str)
+    fn as_string(&self) -> String {
+        format!(
+            "OutputSection \"{}\" (sh_type={}, sh_flags={}, containing {} sections)",
+            self.name,
+            self.common.shdr.sh_type,
+            self.common.shdr.sh_flags,
+            self.sections.len()
+        )
     }
 }
 

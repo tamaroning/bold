@@ -1,8 +1,6 @@
 use crate::{
     context::Context,
-    output_section::{
-        get_output_section_name, OutputChunk, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
-    },
+    output_section::{get_output_section_name, OutputChunk, OutputSectionId},
 };
 
 pub struct Linker {
