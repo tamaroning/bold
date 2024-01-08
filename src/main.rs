@@ -63,7 +63,7 @@ fn main() {
 
     // Assign offsets to input sections
     // mold: set_isec_offsets
-    log::info!("Assigning offsets");
+    log::info!("Assigning isec offsets");
     linker.assign_isec_offsets();
 
     // Add sections to the section lists
@@ -122,7 +122,7 @@ fn main() {
 
     linker.update_shdr();
 
-    log::debug!("Assigning offsets");
+    log::debug!("Assigning osec offsets");
     let filesize = linker.assign_osec_offsets();
     log::debug!("File size: {}", filesize);
 
