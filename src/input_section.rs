@@ -204,23 +204,24 @@ fn get_next_input_section_id() -> InputSectionId {
 pub struct InputSection {
     id: InputSectionId,
     pub elf_section: Arc<ElfSection>,
-    pub output_section_name: String,
     offset: Option<usize>,
 }
 
 impl InputSection {
     fn new(elf_section: Arc<ElfSection>) -> InputSection {
-        let output_section_name = OutputSection::get_output_name(&elf_section.name);
         InputSection {
             id: get_next_input_section_id(),
             elf_section,
-            output_section_name,
             offset: None,
         }
     }
 
     pub fn get_id(&self) -> InputSectionId {
         self.id
+    }
+
+    pub fn get_name(&self) -> &String {
+        &self.elf_section.name
     }
 
     pub fn get_size(&self) -> usize {

@@ -1,6 +1,8 @@
 use crate::{
     context::Context,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr},
+    output_section::{
+        get_output_section_name, OutputChunk, OutputEhdr, OutputPhdr, OutputSectionId, OutputShdr,
+    },
 };
 
 pub struct Linker {
@@ -40,10 +42,12 @@ impl Linker {
         let mut chunks = vec![];
         for input_section_id in input_sections {
             let input_section = self.ctx.get_input_section(input_section_id);
-            let output_section_name = input_section.output_section_name.clone();
-            let output_section = self
-                .ctx
-                .get_output_section_by_name_mut(&output_section_name);
+            let output_section_name = get_output_section_name(input_section.get_name());
+            let sh_type = input_section.elf_section.header.sh_type;
+            let sh_flags = input_section.elf_section.header.sh_flags;
+            let output_section =
+                self.ctx
+                    .get_or_create_output_section_mut(&output_section_name, sh_type, sh_flags);
 
             // Push the section to chunks at most once
             if output_section.sections.is_empty() {
