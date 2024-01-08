@@ -1,3 +1,5 @@
+use elf::section::Elf64_Shdr;
+
 use crate::{
     context::Context,
     output_section::{get_output_section_name, OutputChunk, OutputSectionId},
@@ -77,6 +79,7 @@ impl Linker {
                 }
                 OutputChunk::Phdr(_) => {
                     // TODO:
+                    todo!()
                 }
                 OutputChunk::Section(_) => (),
                 _ => panic!(),
@@ -94,8 +97,38 @@ impl Linker {
     }
 
     pub fn copy_buf(&mut self, buf: &mut [u8]) {
+        // copy all shdrs to buf
+        let mut shdr_ofs = self
+            .chunks
+            .iter()
+            .find_map(|chunk| {
+                if let OutputChunk::Shdr(chunk) = chunk {
+                    Some(chunk.common.shdr.sh_offset)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        for chunk in &self.chunks {
+            if !chunk.is_header() {
+                let size = std::mem::size_of::<Elf64_Shdr>();
+                let view = &chunk.get_common(&self.ctx).shdr as *const _ as *const u8;
+                let slice = unsafe { std::slice::from_raw_parts(view, size) };
+                buf[shdr_ofs as usize..shdr_ofs as usize + size].copy_from_slice(slice);
+                shdr_ofs += size as u64;
+            }
+        }
+
         for chunk in self.chunks.iter_mut() {
-            chunk.copy_buf(buf);
+            match chunk {
+                // FIXME: dummy
+                OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, 0, 0),
+                OutputChunk::Shdr(_) => (),
+                OutputChunk::Phdr(chunk) => chunk.copy_to(buf),
+                OutputChunk::Section(_) => {
+                    todo!()
+                }
+            }
         }
     }
 }

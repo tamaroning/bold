@@ -67,18 +67,6 @@ impl OutputChunk {
         }
     }
 
-    pub fn copy_buf(&self, buf: &mut [u8]) {
-        match self {
-            // FIXME: dummy
-            OutputChunk::Ehdr(chunk) => chunk.copy_buf(buf, 0, 0, 0, 0, 0, 0),
-            OutputChunk::Shdr(chunk) => chunk.copy_to(buf),
-            OutputChunk::Phdr(chunk) => chunk.copy_to(buf),
-            OutputChunk::Section(_) => {
-                todo!()
-            }
-        }
-    }
-
     pub fn as_string(&self, ctx: &Context) -> String {
         (match self {
             OutputChunk::Ehdr(_) => "Ehdr".to_owned(),
@@ -169,29 +157,14 @@ impl OutputEhdr {
 }
 
 pub struct OutputShdr {
-    common: ChunkInfo,
-
-    // TODO: remove
-    shdrs: Vec<Elf64_Shdr>,
+    pub common: ChunkInfo,
 }
 
 impl OutputShdr {
     pub fn new() -> OutputShdr {
         let mut common = ChunkInfo::new();
         common.shdr.sh_flags = SHF_ALLOC as u64;
-        OutputShdr {
-            common,
-            shdrs: vec![],
-        }
-    }
-
-    pub fn copy_to(&self, buf: &mut [u8]) {
-        if self.shdrs.is_empty() {
-            return;
-        }
-        let view = &self.shdrs[0] as *const _ as *const u8;
-        let slice = unsafe { std::slice::from_raw_parts(view, self.common.shdr.sh_size as usize) };
-        buf.copy_from_slice(slice);
+        OutputShdr { common }
     }
 
     pub fn update_shdr(&mut self, n: usize) {
@@ -201,34 +174,21 @@ impl OutputShdr {
 
 pub struct OutputPhdr {
     common: ChunkInfo,
-    phdrs: Vec<Elf64_Phdr>,
 }
 
 impl OutputPhdr {
     pub fn new() -> OutputPhdr {
         let mut common = ChunkInfo::new();
         common.shdr.sh_flags = SHF_ALLOC as u64;
-        OutputPhdr {
-            common,
-            phdrs: vec![],
-        }
-    }
-
-    pub fn add_phdr(&mut self, phdr: Elf64_Phdr) {
-        self.phdrs.push(phdr);
+        OutputPhdr { common }
     }
 
     fn get_size(&self) -> usize {
-        self.phdrs.len() * std::mem::size_of::<Elf64_Phdr>()
+        todo!()
     }
 
     pub fn copy_to(&self, buf: &mut [u8]) {
-        if self.phdrs.is_empty() {
-            return;
-        }
-        let view = &self.phdrs[0] as *const _ as *const u8;
-        let slice = unsafe { std::slice::from_raw_parts(view, self.get_size()) };
-        buf.copy_from_slice(slice);
+        todo!()
     }
 }
 
