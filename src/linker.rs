@@ -78,6 +78,18 @@ impl Linker {
         let num_shdrs = self.calc_num_shdrs();
         let shstrtab_size = shstrtab_content.len() as u64;
         let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
+        let strtab_shndx = self
+            .chunks
+            .iter()
+            .find_map(|chunk| {
+                if let OutputChunk::Strtab(chunk) = chunk {
+                    Some(chunk.common.shndx.unwrap() as u32)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 OutputChunk::Ehdr(_) => (/* Do nothing */),
@@ -88,7 +100,9 @@ impl Linker {
                     log::error!("TODO: update_shdr for Phdr");
                 }
                 OutputChunk::Section(_) => (/* Do nothing */),
-                OutputChunk::Symtab(symtab) => symtab.update_shdr(symtab_content.len() as u64),
+                OutputChunk::Symtab(symtab) => {
+                    symtab.update_shdr(symtab_content.len() as u64, strtab_shndx)
+                }
                 OutputChunk::Strtab(strtab) => strtab.update_shdr(strtab_content.len() as u64),
                 OutputChunk::Shstrtab(shstrtab) => shstrtab.update_shdr(shstrtab_size),
             }
@@ -108,12 +122,12 @@ impl Linker {
 
     pub fn assign_osec_offsets(&mut self) -> u64 {
         let mut filesize = 0;
-        //filesize += padding(filesize, 0x1000);
         for chunk in self.chunks.iter_mut() {
             let sh_addralign = chunk.get_common(&self.ctx).shdr.sh_addralign;
-            let sh_size = chunk.get_common(&self.ctx).shdr.sh_size;
-            //filesize += padding(filesize, sh_addralign);
+            filesize += padding(filesize, sh_addralign);
             chunk.set_offset(&mut self.ctx, filesize);
+            // Make sure to get sh_size here because we set sh_size in set_offset for OutputSection
+            let sh_size = chunk.get_common(&self.ctx).shdr.sh_size;
             filesize += sh_size;
         }
         filesize
@@ -212,12 +226,12 @@ impl Linker {
     fn get_symtab_and_strtab(&self) -> (Vec<Elf64_Sym>, Vec<u8>) {
         let mut symtab_content = vec![];
         let mut strtab_content = vec![0];
-        let mut strtab_ofs = 1;
         for file in self.ctx.files() {
             for sym in file.get_symbols() {
                 if let Some(sym) = sym {
                     if sym.should_write() {
-                        let esym = sym.esym.get();
+                        let mut esym = sym.esym.get();
+                        esym.st_name = strtab_content.len() as u32;
                         let name = &sym.name;
 
                         symtab_content.push(esym);

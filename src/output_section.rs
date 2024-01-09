@@ -10,6 +10,7 @@ use crate::{
     context::{Context, COMMON_SECTION_NAMES},
     dummy,
     input_section::InputSectionId,
+    utils::write_to,
 };
 
 pub enum OutputChunk {
@@ -337,19 +338,18 @@ impl Symtab {
         Symtab { common }
     }
 
-    pub fn update_shdr(&mut self, num_sym: u64) {
+    pub fn update_shdr(&mut self, num_sym: u64, strtab_shndx: u32) {
         self.common.shdr.sh_size = num_sym * std::mem::size_of::<elf::symbol::Elf64_Sym>() as u64;
+        self.common.shdr.sh_link = strtab_shndx;
     }
 
     pub fn copy_buf(&self, buf: &mut [u8], data: &[Elf64_Sym]) {
-        let mut offset = self.common.shdr.sh_offset as u64;
+        let mut offset = self.common.shdr.sh_offset as usize;
         // TODO: NULL symbol
+        offset += write_to::<Elf64_Sym>(buf, offset, &dummy!(Elf64_Sym));
         for sym in data {
-            let size = std::mem::size_of::<Elf64_Sym>();
-            let view = sym as *const _ as *const u8;
-            let slice = unsafe { std::slice::from_raw_parts(view, size) };
-            buf[offset as usize..offset as usize + size].copy_from_slice(slice);
-            offset += size as u64;
+            let size = write_to(buf, offset, sym);
+            offset += size;
         }
     }
 }

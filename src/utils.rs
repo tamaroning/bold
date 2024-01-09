@@ -15,3 +15,11 @@ pub fn padding(val: u64, align: u64) -> u64 {
         align - (val % align)
     }
 }
+
+pub fn write_to<T>(buf: &mut [u8], offset: usize, data: &T) -> usize {
+    let size = std::mem::size_of::<T>();
+    let view = data as *const _ as *const u8;
+    let slice = unsafe { std::slice::from_raw_parts(view, size) };
+    buf[offset..offset + size].copy_from_slice(slice);
+    size
+}

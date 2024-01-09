@@ -1,7 +1,7 @@
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr, Shstrtab, Symtab, Strtab},
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr, Shstrtab, Strtab, Symtab},
 };
 
 mod context;
