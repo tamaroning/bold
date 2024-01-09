@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use crate::{context::Context, dummy};
-use elf::{endian::AnyEndian, section::SectionHeader, symbol::Symbol as ElfSymbolData, ElfBytes};
+use elf::{
+    endian::AnyEndian,
+    section::SectionHeader,
+    symbol::{Elf64_Sym, Symbol as ElfSymbolData},
+    ElfBytes,
+};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct ObjectId {
@@ -25,10 +30,11 @@ pub struct ObjectFile {
     elf_symtab: SectionHeader,
     first_global: usize,
     elf_sections: Vec<Arc<ElfSection>>,
-    elf_symbols: Vec<ElfSymbol>,
+    elf_symbols: Vec<Arc<ElfSymbol>>,
 
     input_sections: Vec<Option<InputSectionId>>,
     symbols: Vec<Option<Symbol>>,
+    is_dso: bool,
 }
 
 impl ObjectFile {
@@ -45,6 +51,7 @@ impl ObjectFile {
             elf_symbols: Vec::new(),
             input_sections: Vec::new(),
             symbols: Vec::new(),
+            is_dso: false,
         }
     }
 
@@ -60,7 +67,7 @@ impl ObjectFile {
         &self.elf_sections
     }
 
-    pub fn get_elf_symbols(&self) -> &[ElfSymbol] {
+    pub fn get_elf_symbols(&self) -> &[Arc<ElfSymbol>] {
         &self.elf_symbols
     }
 
@@ -74,6 +81,8 @@ impl ObjectFile {
 
     pub fn parse(&mut self, ctx: &mut Context) {
         let file = ElfBytes::<AnyEndian>::minimal_parse(&self.data).expect("Open ELF file failed");
+        self.is_dso = file.ehdr.e_type == elf::abi::ET_DYN;
+        log::debug!("dso: {}", self.is_dso);
 
         let shstrtab_shdr = file.section_header_by_name(".shstrtab").unwrap().unwrap();
         let shstrtab = file.section_data_as_strtab(&shstrtab_shdr).unwrap();
@@ -95,10 +104,10 @@ impl ObjectFile {
         let symtab_shdr = file.section_header_by_name(".symtab").unwrap().unwrap();
         for sym in symtab_sec {
             let name = strtab_sec.get(sym.st_name as usize).unwrap();
-            self.elf_symbols.push(ElfSymbol {
+            self.elf_symbols.push(Arc::new(ElfSymbol {
                 name: name.to_string(),
                 sym,
-            });
+            }));
         }
 
         self.elf_symtab = symtab_shdr;
@@ -142,6 +151,7 @@ impl ObjectFile {
             self.symbols[i] = Some(Symbol {
                 name: elf_symbol.name.clone(),
                 file: None,
+                esym: Arc::clone(elf_symbol),
             });
         }
     }
@@ -255,6 +265,19 @@ pub struct ElfSymbol {
     sym: ElfSymbolData,
 }
 
+impl ElfSymbol {
+    pub fn get(&self) -> Elf64_Sym {
+        Elf64_Sym {
+            st_name: self.sym.st_name,
+            st_info: (self.sym.st_bind() << 4) | self.sym.st_symtype(),
+            st_other: self.sym.st_vis(),
+            st_shndx: self.sym.st_shndx,
+            st_value: self.sym.st_value,
+            st_size: self.sym.st_size,
+        }
+    }
+}
+
 impl std::fmt::Debug for ElfSymbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Symbol").field("name", &self.name).finish()
@@ -265,4 +288,12 @@ impl std::fmt::Debug for ElfSymbol {
 pub struct Symbol {
     pub name: String,
     pub file: Option<ObjectId>,
+    pub esym: Arc<ElfSymbol>,
+}
+
+impl Symbol {
+    pub fn should_write(&self) -> bool {
+        // TODO: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L302
+        true
+    }
 }

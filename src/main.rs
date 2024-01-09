@@ -1,7 +1,7 @@
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr},
+    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr, Shstrtab, Symtab, Strtab},
 };
 
 mod context;
@@ -42,7 +42,9 @@ fn main() {
     let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
     let shdr = OutputChunk::Shdr(OutputShdr::new());
     let phdr = OutputChunk::Phdr(OutputPhdr::new());
-    let shstrtab = OutputChunk::Shstrtab(output_section::Shstrtab::new());
+    let symtab = OutputChunk::Symtab(Symtab::new());
+    let strtab = OutputChunk::Strtab(Strtab::new());
+    let shstrtab = OutputChunk::Shstrtab(Shstrtab::new());
 
     // Register (un)defined symbols
     log::info!("Resolving symbols");
@@ -100,6 +102,8 @@ fn main() {
     linker.chunks.insert(0, ehdr);
     linker.chunks.insert(1, phdr);
     linker.chunks.insert(2, shdr);
+    linker.chunks.push(symtab);
+    linker.chunks.push(strtab);
     linker.chunks.push(shstrtab);
     // TODO: interp
 

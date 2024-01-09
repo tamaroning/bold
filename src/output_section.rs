@@ -3,6 +3,7 @@ use elf::{
     file::Elf64_Ehdr,
     section::Elf64_Shdr,
     segment::Elf64_Phdr,
+    symbol::Elf64_Sym,
 };
 
 use crate::{
@@ -16,6 +17,8 @@ pub enum OutputChunk {
     Shdr(OutputShdr),
     Phdr(OutputPhdr),
     Section(OutputSectionId),
+    Strtab(Strtab),
+    Symtab(Symtab),
     Shstrtab(Shstrtab),
 }
 
@@ -29,6 +32,8 @@ impl OutputChunk {
                 let osec = ctx.get_output_section(*osec_id);
                 osec.get_common()
             }
+            OutputChunk::Strtab(chunk) => &chunk.common,
+            OutputChunk::Symtab(chunk) => &chunk.common,
             OutputChunk::Shstrtab(chunk) => &chunk.common,
         }
     }
@@ -42,6 +47,8 @@ impl OutputChunk {
                 let osec = ctx.get_output_section_mut(*osec_id);
                 osec.get_common_mut()
             }
+            OutputChunk::Strtab(chunk) => &mut chunk.common,
+            OutputChunk::Symtab(chunk) => &mut chunk.common,
             OutputChunk::Shstrtab(chunk) => &mut chunk.common,
         }
     }
@@ -55,6 +62,8 @@ impl OutputChunk {
                 let osec = ctx.get_output_section(*osec_id);
                 osec.get_name()
             }
+            OutputChunk::Strtab(_) => ".strtab".to_owned(),
+            OutputChunk::Symtab(_) => ".symtab".to_owned(),
             OutputChunk::Shstrtab(_) => ".shstrtab".to_owned(),
         }
     }
@@ -78,6 +87,8 @@ impl OutputChunk {
                 let osec = ctx.get_output_section_mut(*osec_id);
                 osec.common.shdr.sh_size = offset - offset_start;
             }
+            OutputChunk::Strtab(chunk) => chunk.common.shdr.sh_offset = offset,
+            OutputChunk::Symtab(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Shstrtab(chunk) => chunk.common.shdr.sh_offset = offset,
         }
     }
@@ -98,6 +109,8 @@ impl OutputChunk {
                 let chunk = ctx.get_output_section(*chunk);
                 chunk.as_string()
             }
+            OutputChunk::Strtab(_) => "Strtab ".to_owned(),
+            OutputChunk::Symtab(_) => "Symtab ".to_owned(),
             OutputChunk::Shstrtab(_) => "Shstrtab ".to_owned(),
         }) + &self.get_common(ctx).as_string()
     }
@@ -301,6 +314,59 @@ impl Shstrtab {
 
     pub fn update_shdr(&mut self, shstrtab_size: u64) {
         self.common.shdr.sh_size = shstrtab_size;
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8], data: &[u8]) {
+        let offset = self.common.shdr.sh_offset as usize;
+        buf[offset..offset + data.len()].copy_from_slice(data);
+    }
+}
+
+pub struct Symtab {
+    pub common: ChunkInfo,
+}
+
+impl Symtab {
+    pub fn new() -> Symtab {
+        let mut common = ChunkInfo::new();
+        common.shdr.sh_type = elf::abi::SHT_SYMTAB;
+        common.shdr.sh_entsize = std::mem::size_of::<elf::symbol::Elf64_Sym>() as u64;
+        common.shdr.sh_addralign = 8;
+        // NULL symbol
+        common.shdr.sh_size = std::mem::size_of::<elf::symbol::Elf64_Sym>() as u64;
+        Symtab { common }
+    }
+
+    pub fn update_shdr(&mut self, num_sym: u64) {
+        self.common.shdr.sh_size = num_sym * std::mem::size_of::<elf::symbol::Elf64_Sym>() as u64;
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8], data: &[Elf64_Sym]) {
+        let mut offset = self.common.shdr.sh_offset as u64;
+        // TODO: NULL symbol
+        for sym in data {
+            let size = std::mem::size_of::<Elf64_Sym>();
+            let view = sym as *const _ as *const u8;
+            let slice = unsafe { std::slice::from_raw_parts(view, size) };
+            buf[offset as usize..offset as usize + size].copy_from_slice(slice);
+            offset += size as u64;
+        }
+    }
+}
+
+pub struct Strtab {
+    pub common: ChunkInfo,
+}
+
+impl Strtab {
+    pub fn new() -> Strtab {
+        let mut common = ChunkInfo::new();
+        common.shdr.sh_type = elf::abi::SHT_STRTAB;
+        Strtab { common }
+    }
+
+    pub fn update_shdr(&mut self, strtab_size: u64) {
+        self.common.shdr.sh_size = strtab_size;
     }
 
     pub fn copy_buf(&self, buf: &mut [u8], data: &[u8]) {
