@@ -1,3 +1,5 @@
+pub const PAGE_SIZE: u64 = 0x1000;
+
 pub struct Config {
     pub image_base: u64,
 }

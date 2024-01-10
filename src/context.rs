@@ -92,8 +92,8 @@ impl Context {
         let mut find = None;
         for section in &mut self.output_sections_mut() {
             if section.get_name() == *name
-                && section.get_common().shdr.sh_type == sh_type
-                && section.get_common().shdr.sh_flags == sh_flags
+                && section.get_sh_type() == sh_type
+                && section.get_sh_flags() == sh_flags
             {
                 find = Some(section.get_id());
                 break;

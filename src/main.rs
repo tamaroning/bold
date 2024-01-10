@@ -1,7 +1,9 @@
 use crate::{
     context::Context,
     input_section::ObjectFile,
-    output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr, Shstrtab, Strtab, Symtab},
+    output_section::{
+        OutputChunk, OutputEhdr, OutputPhdr, OutputSectionRef, OutputShdr, Shstrtab, Strtab, Symtab,
+    },
 };
 
 mod config;
@@ -77,7 +79,7 @@ fn main() {
         let output_section = linker.get_ctx().get_output_section(output_section);
         linker
             .chunks
-            .push(OutputChunk::Section(output_section.get_id()));
+            .push(OutputChunk::Section(OutputSectionRef::from(output_section)));
     }
 
     // TODO: Sort the sections by section flags so that we'll have to create
@@ -151,7 +153,7 @@ fn main() {
 
     log::debug!("Chunks:");
     for chunk in linker.chunks.iter() {
-        let shndx = chunk.get_common(linker.get_ctx()).shndx;
+        let shndx = chunk.get_common().shndx;
         log::debug!(
             "\t[{}]: {}",
             shndx.map(|x| x.to_string()).unwrap_or("-".to_string()),

@@ -6,7 +6,7 @@ use elf::{
 };
 
 use crate::{
-    config::Config,
+    config::{Config, PAGE_SIZE},
     context::Context,
     output_section::{get_output_section_name, OutputChunk, OutputSectionId},
     utils::padding,
@@ -93,7 +93,7 @@ impl Linker<'_> {
         for chunk in self.chunks.iter_mut() {
             if !chunk.is_header() {
                 let name = chunk.get_section_name(&self.ctx);
-                let shdr = &mut chunk.get_common_mut(&mut self.ctx).shdr;
+                let shdr = &mut chunk.get_common_mut().shdr;
                 shdr.sh_name = calc_sh_name_from_shstrtab(&shstrtab_content, &name) as u32;
             }
         }
@@ -138,7 +138,7 @@ impl Linker<'_> {
         let mut shndx = 0;
         for chunk in self.chunks.iter_mut() {
             if !chunk.is_header() {
-                let common = chunk.get_common_mut(&mut self.ctx);
+                let common = chunk.get_common_mut();
                 common.shndx = Some(shndx);
                 shndx += 1;
             }
@@ -150,15 +150,15 @@ impl Linker<'_> {
         let mut vaddr = self.config.image_base;
 
         for chunk in self.chunks.iter_mut() {
-            if chunk.should_be_loaded(&self.ctx) {
+            if chunk.get_common().should_be_loaded() {
                 vaddr += padding(vaddr, PAGE_SIZE);
             }
 
-            let sh_addralign = chunk.get_common(&self.ctx).shdr.sh_addralign;
+            let sh_addralign = chunk.get_common().shdr.sh_addralign;
             filesize += padding(filesize, sh_addralign);
             chunk.set_offset(&mut self.ctx, filesize);
             // Make sure to get sh_size here because we set sh_size in set_offset for OutputSection
-            let sh_size = chunk.get_common(&self.ctx).shdr.sh_size;
+            let sh_size = chunk.get_common().shdr.sh_size;
             filesize += sh_size;
         }
         filesize
@@ -181,7 +181,7 @@ impl Linker<'_> {
         for chunk in &self.chunks {
             if !chunk.is_header() {
                 let size = std::mem::size_of::<Elf64_Shdr>();
-                let view = &chunk.get_common(&self.ctx).shdr as *const _ as *const u8;
+                let view = &chunk.get_common().shdr as *const _ as *const u8;
                 let slice = unsafe { std::slice::from_raw_parts(view, size) };
                 buf[shdr_ofs as usize..shdr_ofs as usize + size].copy_from_slice(slice);
                 shdr_ofs += size as u64;
@@ -234,7 +234,7 @@ impl Linker<'_> {
                     chunk.copy_buf(buf, &phdrs);
                 }
                 OutputChunk::Section(chunk) => {
-                    let chunk = self.ctx.get_output_section(*chunk);
+                    let chunk = self.ctx.get_output_section(chunk.get_id());
                     chunk.copy_buf(&self.ctx, buf);
                 }
                 OutputChunk::Strtab(chunk) => {
@@ -307,7 +307,6 @@ impl Linker<'_> {
     }
 
     fn create_phdr(&self) -> Vec<Elf64_Phdr> {
-        const PAGE_SIZE: u64 = 0x1000;
         fn to_phdr_flags(shdr: &Elf64_Shdr) -> u32 {
             let mut ret = PF_R;
             if shdr.sh_flags & SHF_WRITE as u64 != 0 {
@@ -344,8 +343,8 @@ impl Linker<'_> {
         let mut phdrs = vec![];
         // Create PT_LOAD
         for chunk in &self.chunks {
-            if chunk.get_common(&self.ctx).should_be_loaded() {
-                let shdr = &chunk.get_common(&self.ctx).shdr;
+            if chunk.get_common().should_be_loaded() {
+                let shdr = &chunk.get_common().shdr;
                 let phdr = new_phdr(PT_LOAD, to_phdr_flags(shdr), PAGE_SIZE, shdr);
                 phdrs.push(phdr);
             }

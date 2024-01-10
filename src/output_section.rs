@@ -1,5 +1,9 @@
 use elf::{
-    abi::SHT_STRTAB, file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr, symbol::Elf64_Sym,
+    abi::{SHF_ALLOC, SHT_STRTAB},
+    file::Elf64_Ehdr,
+    section::Elf64_Shdr,
+    segment::Elf64_Phdr,
+    symbol::Elf64_Sym,
 };
 
 use crate::{
@@ -13,37 +17,31 @@ pub enum OutputChunk {
     Ehdr(OutputEhdr),
     Shdr(OutputShdr),
     Phdr(OutputPhdr),
-    Section(OutputSectionId),
+    Section(OutputSectionRef),
     Strtab(Strtab),
     Symtab(Symtab),
     Shstrtab(Shstrtab),
 }
 
 impl OutputChunk {
-    pub fn get_common<'a>(&'a self, ctx: &'a Context) -> &'a ChunkInfo {
+    pub fn get_common(&self) -> &ChunkInfo {
         match self {
             OutputChunk::Ehdr(chunk) => &chunk.common,
             OutputChunk::Shdr(chunk) => &chunk.common,
             OutputChunk::Phdr(chunk) => &chunk.common,
-            OutputChunk::Section(osec_id) => {
-                let osec = ctx.get_output_section(*osec_id);
-                osec.get_common()
-            }
+            OutputChunk::Section(chunk) => &chunk.common,
             OutputChunk::Strtab(chunk) => &chunk.common,
             OutputChunk::Symtab(chunk) => &chunk.common,
             OutputChunk::Shstrtab(chunk) => &chunk.common,
         }
     }
 
-    pub fn get_common_mut<'a>(&'a mut self, ctx: &'a mut Context) -> &'a mut ChunkInfo {
+    pub fn get_common_mut<'a>(&'a mut self) -> &'a mut ChunkInfo {
         match self {
             OutputChunk::Ehdr(chunk) => &mut chunk.common,
             OutputChunk::Shdr(chunk) => &mut chunk.common,
             OutputChunk::Phdr(chunk) => &mut chunk.common,
-            OutputChunk::Section(osec_id) => {
-                let osec = ctx.get_output_section_mut(*osec_id);
-                osec.get_common_mut()
-            }
+            OutputChunk::Section(chunk) => &mut chunk.common,
             OutputChunk::Strtab(chunk) => &mut chunk.common,
             OutputChunk::Symtab(chunk) => &mut chunk.common,
             OutputChunk::Shstrtab(chunk) => &mut chunk.common,
@@ -55,8 +53,8 @@ impl OutputChunk {
             OutputChunk::Ehdr(_) => panic!(),
             OutputChunk::Shdr(_) => panic!(),
             OutputChunk::Phdr(_) => panic!(),
-            OutputChunk::Section(osec_id) => {
-                let osec = ctx.get_output_section(*osec_id);
+            OutputChunk::Section(osec) => {
+                let osec = ctx.get_output_section(osec.get_id());
                 osec.get_name()
             }
             OutputChunk::Strtab(_) => ".strtab".to_owned(),
@@ -70,10 +68,10 @@ impl OutputChunk {
             OutputChunk::Ehdr(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Shdr(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Phdr(chunk) => chunk.common.shdr.sh_offset = offset,
-            OutputChunk::Section(osec_id) => {
-                let osec = ctx.get_output_section_mut(*osec_id);
+            OutputChunk::Section(osec_ref) => {
+                let osec = ctx.get_output_section_mut(osec_ref.get_id());
                 let offset_start = offset;
-                osec.common.shdr.sh_offset = offset;
+                osec_ref.common.shdr.sh_offset = offset;
 
                 for input_section in osec.sections.clone() {
                     let input_section = ctx.get_input_section_mut(input_section);
@@ -81,8 +79,7 @@ impl OutputChunk {
                     offset += input_section.get_size();
                 }
 
-                let osec = ctx.get_output_section_mut(*osec_id);
-                osec.common.shdr.sh_size = offset - offset_start;
+                osec_ref.common.shdr.sh_size = offset - offset_start;
             }
             OutputChunk::Strtab(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Symtab(chunk) => chunk.common.shdr.sh_offset = offset,
@@ -102,14 +99,14 @@ impl OutputChunk {
             OutputChunk::Ehdr(_) => "Ehdr ".to_owned(),
             OutputChunk::Shdr(_) => "Shdr ".to_owned(),
             OutputChunk::Phdr(_) => "Phdr ".to_owned(),
-            OutputChunk::Section(chunk) => {
-                let chunk = ctx.get_output_section(*chunk);
+            OutputChunk::Section(osec_ref) => {
+                let chunk = ctx.get_output_section(osec_ref.get_id());
                 chunk.as_string()
             }
             OutputChunk::Strtab(_) => "Strtab ".to_owned(),
             OutputChunk::Symtab(_) => "Symtab ".to_owned(),
             OutputChunk::Shstrtab(_) => "Shstrtab ".to_owned(),
-        }) + &self.get_common(ctx).as_string()
+        }) + &self.get_common().as_string()
     }
 }
 
@@ -135,6 +132,10 @@ impl ChunkInfo {
             self.shdr.sh_size,
             self.shdr.sh_name
         )
+    }
+
+    pub fn should_be_loaded(&self) -> bool {
+        self.shdr.sh_flags & SHF_ALLOC as u64 != 0
     }
 }
 
@@ -237,6 +238,28 @@ pub struct OutputSectionId {
     private: usize,
 }
 
+#[derive(Debug)]
+pub struct OutputSectionRef {
+    id: OutputSectionId,
+    pub common: ChunkInfo,
+}
+
+impl OutputSectionRef {
+    pub fn from(osec: &OutputSection) -> OutputSectionRef {
+        let mut common = ChunkInfo::new();
+        common.shdr.sh_type = osec.sh_type;
+        common.shdr.sh_flags = osec.sh_flags;
+        OutputSectionRef {
+            id: osec.get_id(),
+            common,
+        }
+    }
+
+    pub fn get_id(&self) -> OutputSectionId {
+        self.id
+    }
+}
+
 fn get_next_output_section_id() -> OutputSectionId {
     static mut OUTPUT_SECTION_ID: usize = 0;
     let id = unsafe { OUTPUT_SECTION_ID };
@@ -247,21 +270,20 @@ fn get_next_output_section_id() -> OutputSectionId {
 #[derive(Debug)]
 pub struct OutputSection {
     id: OutputSectionId,
-    common: ChunkInfo,
     name: String,
     pub sections: Vec<InputSectionId>,
+    sh_type: u32,
+    sh_flags: u64,
 }
 
 impl OutputSection {
     pub fn new(name: String, sh_type: u32, sh_flags: u64) -> OutputSection {
-        let mut common = ChunkInfo::new();
-        common.shdr.sh_type = sh_type;
-        common.shdr.sh_flags = sh_flags;
         OutputSection {
             id: get_next_output_section_id(),
-            common,
             name,
             sections: vec![],
+            sh_type,
+            sh_flags,
         }
     }
 
@@ -269,16 +291,16 @@ impl OutputSection {
         self.id
     }
 
-    pub fn get_common(&self) -> &ChunkInfo {
-        &self.common
-    }
-
-    pub fn get_common_mut(&mut self) -> &mut ChunkInfo {
-        &mut self.common
-    }
-
     pub fn get_name(&self) -> String {
         self.name.clone()
+    }
+
+    pub fn get_sh_type(&self) -> u32 {
+        self.sh_type
+    }
+
+    pub fn get_sh_flags(&self) -> u64 {
+        self.sh_flags
     }
 
     pub fn copy_buf(&self, ctx: &Context, buf: &mut [u8]) {
