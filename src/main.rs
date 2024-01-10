@@ -4,6 +4,7 @@ use crate::{
     output_section::{OutputChunk, OutputEhdr, OutputPhdr, OutputShdr, Shstrtab, Strtab, Symtab},
 };
 
+mod config;
 mod context;
 mod input_section;
 mod linker;
@@ -37,7 +38,8 @@ fn main() {
         ctx.set_object_file(file);
     }
 
-    let mut linker = linker::Linker::new(ctx);
+    let config = config::Config::new();
+    let mut linker = linker::Linker::new(ctx, &config);
 
     let ehdr = OutputChunk::Ehdr(OutputEhdr::new());
     let shdr = OutputChunk::Shdr(OutputShdr::new());

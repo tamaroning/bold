@@ -6,22 +6,25 @@ use elf::{
 };
 
 use crate::{
+    config::Config,
     context::Context,
     output_section::{get_output_section_name, OutputChunk, OutputSectionId},
     utils::padding,
 };
 
-pub struct Linker {
+pub struct Linker<'ctx> {
     ctx: Context,
     // Move this to the main function
     pub chunks: Vec<OutputChunk>,
+    pub config: &'ctx Config,
 }
 
-impl Linker {
-    pub fn new(ctx: Context) -> Linker {
+impl Linker<'_> {
+    pub fn new<'ctx>(ctx: Context, config: &'ctx Config) -> Linker<'ctx> {
         Linker {
             ctx,
             chunks: vec![],
+            config,
         }
     }
 
@@ -86,7 +89,6 @@ impl Linker {
             }
             sh_name
         }
-
         let shstrtab_content = self.get_shstrtab_content();
         for chunk in self.chunks.iter_mut() {
             if !chunk.is_header() {
@@ -145,7 +147,13 @@ impl Linker {
 
     pub fn assign_osec_offsets(&mut self) -> u64 {
         let mut filesize = 0;
+        let mut vaddr = self.config.image_base;
+
         for chunk in self.chunks.iter_mut() {
+            if chunk.should_be_loaded(&self.ctx) {
+                vaddr += padding(vaddr, PAGE_SIZE);
+            }
+
             let sh_addralign = chunk.get_common(&self.ctx).shdr.sh_addralign;
             filesize += padding(filesize, sh_addralign);
             chunk.set_offset(&mut self.ctx, filesize);
@@ -336,8 +344,8 @@ impl Linker {
         let mut phdrs = vec![];
         // Create PT_LOAD
         for chunk in &self.chunks {
-            let shdr = &chunk.get_common(&self.ctx).shdr;
-            if shdr.sh_flags & SHF_ALLOC as u64 != 0 {
+            if chunk.get_common(&self.ctx).should_be_loaded() {
+                let shdr = &chunk.get_common(&self.ctx).shdr;
                 let phdr = new_phdr(PT_LOAD, to_phdr_flags(shdr), PAGE_SIZE, shdr);
                 phdrs.push(phdr);
             }
