@@ -6,6 +6,11 @@ macro_rules! dummy {
     };
 }
 
+pub fn align_to(val: u64, align: u64) -> u64 {
+    debug_assert!(align.is_power_of_two());
+    return (val + align - 1) & !(align - 1);
+}
+
 // e.g. padding(0x1234, 0x1000) == 0x2000 - 0x1234
 // padding(0x1000, 0x100) = 0x1000 - 0x1000
 pub fn padding(val: u64, align: u64) -> u64 {

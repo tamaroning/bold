@@ -1,5 +1,5 @@
 use elf::{
-    abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS},
+    abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
     section::Elf64_Shdr,
     segment::Elf64_Phdr,
     symbol::Elf64_Sym,
@@ -8,8 +8,9 @@ use elf::{
 use crate::{
     config::{Config, PAGE_SIZE},
     context::Context,
+    dummy,
     output_section::{get_output_section_name, OutputChunk, OutputSectionId},
-    utils::padding,
+    utils::{align_to, padding},
 };
 
 pub struct Linker<'ctx> {
@@ -99,7 +100,7 @@ impl Linker<'_> {
         }
 
         // Call update_shdr for all chunks
-        let num_shdrs = self.calc_num_shdrs();
+        let num_shdrs = self.get_shdrs().len();
         let num_phdrs = self.create_phdr().len();
         let shstrtab_size = shstrtab_content.len() as u64;
         let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
@@ -146,22 +147,44 @@ impl Linker<'_> {
     }
 
     pub fn assign_osec_offsets(&mut self) -> u64 {
-        let mut filesize = 0;
+        let mut file_ofs = 0;
         let mut vaddr = self.config.image_base;
 
         for chunk in self.chunks.iter_mut() {
             if chunk.get_common().should_be_loaded() {
-                vaddr += padding(vaddr, PAGE_SIZE);
+                vaddr = align_to(vaddr, PAGE_SIZE);
+            }
+
+            if vaddr % PAGE_SIZE > file_ofs % PAGE_SIZE {
+                file_ofs += vaddr % PAGE_SIZE - file_ofs % PAGE_SIZE;
+            } else if vaddr % PAGE_SIZE < file_ofs % PAGE_SIZE {
+                file_ofs = align_to(file_ofs, PAGE_SIZE) + vaddr % PAGE_SIZE;
             }
 
             let sh_addralign = chunk.get_common().shdr.sh_addralign;
-            filesize += padding(filesize, sh_addralign);
-            chunk.set_offset(&mut self.ctx, filesize);
-            // Make sure to get sh_size here because we set sh_size in set_offset for OutputSection
-            let sh_size = chunk.get_common().shdr.sh_size;
-            filesize += sh_size;
+            file_ofs = align_to(file_ofs, sh_addralign);
+            vaddr = align_to(vaddr, sh_addralign);
+
+            let sh_addralign = chunk.get_common().shdr.sh_addralign;
+            file_ofs += padding(file_ofs, sh_addralign);
+            chunk.set_offset(&mut self.ctx, file_ofs);
+
+            // Make sure to get sh_size after `chunk.set_offset` because we set a value to sh_size in it
+            // TODO: bss and tbss
+            if chunk.get_common().shdr.sh_flags & SHF_ALLOC as u64 != 0 {
+                chunk.get_common_mut().shdr.sh_addr = vaddr;
+            }
+
+            let is_bss = chunk.get_common().shdr.sh_type == SHT_NOBITS;
+            if !is_bss {
+                file_ofs += chunk.get_common_mut().shdr.sh_size;
+            }
+            let is_tbss = chunk.get_common().shdr.sh_flags & SHF_TLS as u64 != 0;
+            if !is_tbss {
+                vaddr += chunk.get_common_mut().shdr.sh_size;
+            }
         }
-        filesize
+        file_ofs
     }
 
     pub fn copy_buf(&mut self, buf: &mut [u8]) {
@@ -177,18 +200,8 @@ impl Linker<'_> {
                 }
             })
             .unwrap();
-        let mut shdr_ofs = e_shoff;
-        for chunk in &self.chunks {
-            if !chunk.is_header() {
-                let size = std::mem::size_of::<Elf64_Shdr>();
-                let view = &chunk.get_common().shdr as *const _ as *const u8;
-                let slice = unsafe { std::slice::from_raw_parts(view, size) };
-                buf[shdr_ofs as usize..shdr_ofs as usize + size].copy_from_slice(slice);
-                shdr_ofs += size as u64;
-            }
-        }
 
-        let e_shnum = self.calc_num_shdrs() as u16;
+        let e_shnum = self.get_shdrs().len() as u16;
         let e_shstrndx = self
             .chunks
             .iter()
@@ -213,6 +226,7 @@ impl Linker<'_> {
             .unwrap();
         let shstrtab_content = self.get_shstrtab_content();
         let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
+        let shdrs = self.get_shdrs();
         let phdrs = self.create_phdr();
         // copy all other sections and headers
         for chunk in self.chunks.iter_mut() {
@@ -227,8 +241,8 @@ impl Linker<'_> {
                     e_shnum,
                     e_shstrndx,
                 ),
-                OutputChunk::Shdr(_) => {
-                    // Do nothing
+                OutputChunk::Shdr(chunk) => {
+                    chunk.copy_buf(buf, e_shoff as usize, &shdrs);
                 }
                 OutputChunk::Phdr(chunk) => {
                     chunk.copy_buf(buf, &phdrs);
@@ -263,14 +277,14 @@ impl Linker<'_> {
         }
     }
 
-    fn calc_num_shdrs(&self) -> usize {
-        let mut n = 0;
-        for chunk in self.chunks.iter() {
+    fn get_shdrs(&self) -> Vec<Elf64_Shdr> {
+        let mut shdrs = vec![];
+        for chunk in &self.chunks {
             if !chunk.is_header() {
-                n += 1;
+                shdrs.push(chunk.get_common().get_elf64_shdr());
             }
         }
-        n
+        shdrs
     }
 
     fn get_shstrtab_content(&self) -> Vec<u8> {

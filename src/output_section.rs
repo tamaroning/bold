@@ -134,8 +134,24 @@ impl ChunkInfo {
         )
     }
 
+    /// Returns true if this chunk should be loaded as PT_LOAD
     pub fn should_be_loaded(&self) -> bool {
         self.shdr.sh_flags & SHF_ALLOC as u64 != 0
+    }
+
+    pub fn get_elf64_shdr(&self) -> Elf64_Shdr {
+        Elf64_Shdr {
+            sh_name: self.shdr.sh_name,
+            sh_type: self.shdr.sh_type,
+            sh_flags: self.shdr.sh_flags,
+            sh_addr: self.shdr.sh_addr,
+            sh_offset: self.shdr.sh_offset,
+            sh_size: self.shdr.sh_size,
+            sh_link: self.shdr.sh_link,
+            sh_info: self.shdr.sh_info,
+            sh_addralign: self.shdr.sh_addralign,
+            sh_entsize: self.shdr.sh_entsize,
+        }
     }
 }
 
@@ -204,8 +220,16 @@ impl OutputShdr {
         OutputShdr { common }
     }
 
-    pub fn update_shdr(&mut self, n: usize) {
-        self.common.shdr.sh_size = (n * std::mem::size_of::<Elf64_Shdr>()) as u64;
+    pub fn update_shdr(&mut self, num_shdrs: usize) {
+        self.common.shdr.sh_size = (num_shdrs * std::mem::size_of::<Elf64_Shdr>()) as u64;
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8], e_shoff: usize, data: &[Elf64_Shdr]) {
+        let mut offset = e_shoff;
+        for shdr in data {
+            let size = write_to(buf, offset, shdr);
+            offset += size;
+        }
     }
 }
 
