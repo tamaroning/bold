@@ -72,6 +72,21 @@ impl Linker {
 
     pub fn update_shdr(&mut self) {
         // Set sh_name to all shdrs
+        fn calc_sh_name_from_shstrtab(shstrtab_content: &[u8], section_name: &str) -> usize {
+            let mut section_name = unsafe { section_name.to_string().as_bytes_mut() }.to_vec();
+            section_name.push(0);
+            let mut sh_name = 0;
+            let mut i = 0;
+            while i < shstrtab_content.len() {
+                if shstrtab_content[i..].starts_with(&section_name) {
+                    sh_name = i;
+                    break;
+                }
+                i += 1;
+            }
+            sh_name
+        }
+
         let shstrtab_content = self.get_shstrtab_content();
         for chunk in self.chunks.iter_mut() {
             if !chunk.is_header() {
@@ -81,6 +96,7 @@ impl Linker {
             }
         }
 
+        // Call update_shdr for all chunks
         let num_shdrs = self.calc_num_shdrs();
         let num_phdrs = self.create_phdr().len();
         let shstrtab_size = shstrtab_content.len() as u64;
@@ -328,19 +344,4 @@ impl Linker {
         }
         phdrs
     }
-}
-
-fn calc_sh_name_from_shstrtab(shstrtab_content: &[u8], section_name: &str) -> usize {
-    let mut section_name = unsafe { section_name.to_string().as_bytes_mut() }.to_vec();
-    section_name.push(0);
-    let mut sh_name = 0;
-    let mut i = 0;
-    while i < shstrtab_content.len() {
-        if shstrtab_content[i..].starts_with(&section_name) {
-            sh_name = i;
-            break;
-        }
-        i += 1;
-    }
-    sh_name
 }
