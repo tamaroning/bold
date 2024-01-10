@@ -1,9 +1,5 @@
 use elf::{
-    abi::{SHF_ALLOC, SHT_STRTAB},
-    file::Elf64_Ehdr,
-    section::Elf64_Shdr,
-    segment::Elf64_Phdr,
-    symbol::Elf64_Sym,
+    abi::SHT_STRTAB, file::Elf64_Ehdr, section::Elf64_Shdr, segment::Elf64_Phdr, symbol::Elf64_Sym,
 };
 
 use crate::{
@@ -149,7 +145,6 @@ pub struct OutputEhdr {
 impl OutputEhdr {
     pub fn new() -> OutputEhdr {
         let mut common = ChunkInfo::new();
-        common.shdr.sh_flags = SHF_ALLOC as u64;
         common.shdr.sh_size = std::mem::size_of::<Elf64_Ehdr>() as u64;
         OutputEhdr { common }
     }
@@ -204,8 +199,7 @@ pub struct OutputShdr {
 
 impl OutputShdr {
     pub fn new() -> OutputShdr {
-        let mut common = ChunkInfo::new();
-        common.shdr.sh_flags = SHF_ALLOC as u64;
+        let common = ChunkInfo::new();
         OutputShdr { common }
     }
 
@@ -215,14 +209,26 @@ impl OutputShdr {
 }
 
 pub struct OutputPhdr {
-    common: ChunkInfo,
+    pub common: ChunkInfo,
 }
 
 impl OutputPhdr {
     pub fn new() -> OutputPhdr {
-        let mut common = ChunkInfo::new();
-        common.shdr.sh_flags = SHF_ALLOC as u64;
+        let common = ChunkInfo::new();
         OutputPhdr { common }
+    }
+
+    pub fn update_shdr(&mut self, num_entry: usize) {
+        self.common.shdr.sh_size = (num_entry * std::mem::size_of::<Elf64_Phdr>()) as u64;
+    }
+
+    pub fn copy_buf(&self, buf: &mut [u8], data: &[Elf64_Phdr]) {
+        let mut offset = self.common.shdr.sh_offset as usize;
+        // Other symbols
+        for phdr in data {
+            let size = write_to(buf, offset, phdr);
+            offset += size;
+        }
     }
 }
 
@@ -345,8 +351,9 @@ impl Symtab {
 
     pub fn copy_buf(&self, buf: &mut [u8], data: &[Elf64_Sym]) {
         let mut offset = self.common.shdr.sh_offset as usize;
-        // TODO: NULL symbol
+        // NULL symbol
         offset += write_to::<Elf64_Sym>(buf, offset, &dummy!(Elf64_Sym));
+        // Other symbols
         for sym in data {
             let size = write_to(buf, offset, sym);
             offset += size;

@@ -1,4 +1,9 @@
-use elf::{section::Elf64_Shdr, symbol::Elf64_Sym};
+use elf::{
+    abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS},
+    section::Elf64_Shdr,
+    segment::Elf64_Phdr,
+    symbol::Elf64_Sym,
+};
 
 use crate::{
     context::Context,
@@ -25,6 +30,7 @@ impl Linker {
     }
 
     pub fn resolve_symbols(&mut self) {
+        // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L536
         for file in self.ctx.files_mut() {
             file.register_defined_symbols();
             file.register_undefined_symbols();
@@ -76,6 +82,7 @@ impl Linker {
         }
 
         let num_shdrs = self.calc_num_shdrs();
+        let num_phdrs = self.create_phdr().len();
         let shstrtab_size = shstrtab_content.len() as u64;
         let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
         let strtab_shndx = self
@@ -96,8 +103,8 @@ impl Linker {
                 OutputChunk::Shdr(shdr) => {
                     shdr.update_shdr(num_shdrs);
                 }
-                OutputChunk::Phdr(_) => {
-                    log::error!("TODO: update_shdr for Phdr");
+                OutputChunk::Phdr(phdr) => {
+                    phdr.update_shdr(num_phdrs);
                 }
                 OutputChunk::Section(_) => (/* Do nothing */),
                 OutputChunk::Symtab(symtab) => {
@@ -169,20 +176,38 @@ impl Linker {
                 }
             })
             .unwrap();
+        let e_phoff = self
+            .chunks
+            .iter()
+            .find_map(|chunk| {
+                if let OutputChunk::Phdr(chunk) = chunk {
+                    Some(chunk.common.shdr.sh_offset)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
         let shstrtab_content = self.get_shstrtab_content();
         let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
+        let phdrs = self.create_phdr();
         // copy all other sections and headers
         for chunk in self.chunks.iter_mut() {
             match chunk {
                 // FIXME: dummy
-                OutputChunk::Ehdr(chunk) => {
-                    chunk.copy_buf(buf, 0, 0, e_shoff, 0, e_shnum, e_shstrndx)
-                }
+                OutputChunk::Ehdr(chunk) => chunk.copy_buf(
+                    buf,
+                    0,
+                    e_phoff,
+                    e_shoff,
+                    phdrs.len() as u16,
+                    e_shnum,
+                    e_shstrndx,
+                ),
                 OutputChunk::Shdr(_) => {
                     // Do nothing
                 }
-                OutputChunk::Phdr(_) => {
-                    log::error!("TODO: copy_buf for Phdr");
+                OutputChunk::Phdr(chunk) => {
+                    chunk.copy_buf(buf, &phdrs);
                 }
                 OutputChunk::Section(chunk) => {
                     let chunk = self.ctx.get_output_section(*chunk);
@@ -192,6 +217,19 @@ impl Linker {
                     chunk.copy_buf(buf, &strtab_content);
                 }
                 OutputChunk::Symtab(chunk) => {
+                    // TODO: st_value and st_shndx must be set
+                    // 1. Set address to st_value. mold get symbol address by calling `Symbol::get_addr() const`
+                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L732
+                    // 2. Symbol::get_addr() const calls `InputSection::get_addr() const`
+                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1184
+                    // 3. In turn, it gets address from sh_addr.
+                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1218
+                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1223
+                    // 4. sh_addr is set in `set_osec_offsets()`
+                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L567
+
+                    // TODO: rename OutputSection to `MergedSection`
+                    // `MergedSection` contains multiple `SectionFragment`s
                     chunk.copy_buf(buf, &symtab_content);
                 }
                 OutputChunk::Shstrtab(chunk) => {
@@ -242,6 +280,53 @@ impl Linker {
             }
         }
         (symtab_content, strtab_content)
+    }
+
+    fn create_phdr(&self) -> Vec<Elf64_Phdr> {
+        const PAGE_SIZE: u64 = 0x1000;
+        fn to_phdr_flags(shdr: &Elf64_Shdr) -> u32 {
+            let mut ret = PF_R;
+            if shdr.sh_flags & SHF_WRITE as u64 != 0 {
+                ret |= PF_W;
+            }
+            if shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
+                ret |= PF_X;
+            }
+            ret
+        }
+
+        fn new_phdr(
+            p_type: u32,
+            p_flags: u32,
+            p_align: u64,
+            chunk_shdr: &Elf64_Shdr,
+        ) -> Elf64_Phdr {
+            Elf64_Phdr {
+                p_type,
+                p_flags,
+                p_offset: chunk_shdr.sh_offset,
+                p_vaddr: chunk_shdr.sh_addr,
+                p_paddr: chunk_shdr.sh_addr,
+                p_filesz: if chunk_shdr.sh_type == SHT_NOBITS {
+                    0
+                } else {
+                    chunk_shdr.sh_size
+                },
+                p_memsz: chunk_shdr.sh_size,
+                p_align,
+            }
+        }
+
+        let mut phdrs = vec![];
+        // Create PT_LOAD
+        for chunk in &self.chunks {
+            let shdr = &chunk.get_common(&self.ctx).shdr;
+            if shdr.sh_flags & SHF_ALLOC as u64 != 0 {
+                let phdr = new_phdr(PT_LOAD, to_phdr_flags(shdr), PAGE_SIZE, shdr);
+                phdrs.push(phdr);
+            }
+        }
+        phdrs
     }
 }
 

@@ -143,13 +143,24 @@ impl ObjectFile {
 
     fn initialize_symbols(&mut self) {
         self.symbols.resize(self.elf_symbols.len(), None);
+
+        // Initialize local symbols
+        for (i, _elf_symbol) in self.elf_symbols.iter().enumerate() {
+            if i == self.first_global {
+                break;
+            }
+            // TODO: what should be done?
+        }
+
+        // Initialize global symbols
         for (i, elf_symbol) in self.elf_symbols.iter().enumerate() {
-            // Skip until reaching the first global
             if i < self.first_global {
                 continue;
             }
+            let name_end = elf_symbol.name.find('@').unwrap_or(elf_symbol.name.len());
+            let name = elf_symbol.name[..name_end].to_string();
             self.symbols[i] = Some(Symbol {
-                name: elf_symbol.name.clone(),
+                name,
                 file: None,
                 esym: Arc::clone(elf_symbol),
             });
@@ -263,6 +274,14 @@ impl InputSection {
 pub struct ElfSymbol {
     name: String,
     sym: ElfSymbolData,
+}
+
+pub fn is_abs(sym: &ElfSymbolData) -> bool {
+    sym.st_shndx == elf::abi::SHN_ABS as u16
+}
+
+pub fn is_common(sym: &ElfSymbolData) -> bool {
+    sym.st_shndx == elf::abi::SHN_COMMON as u16
 }
 
 impl ElfSymbol {
