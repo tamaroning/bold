@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{context::Context, dummy};
 use elf::{
     endian::AnyEndian,
+    relocation::{Elf64_Rela, Rela},
     section::SectionHeader,
     symbol::{Elf64_Sym, Symbol as ElfSymbolData},
     ElfBytes,
@@ -88,7 +89,7 @@ impl ObjectFile {
         let shstrtab = file.section_data_as_strtab(&shstrtab_shdr).unwrap();
         let section_headers = file.section_headers().unwrap();
         // Arrange elf_sections
-        for shdr in section_headers.into_iter() {
+        for shdr in section_headers {
             let name = shstrtab.get(shdr.sh_name as usize).unwrap();
             // TODO: remove clone()
             self.elf_sections.push(Arc::new(ElfSection {
@@ -113,11 +114,27 @@ impl ObjectFile {
         self.elf_symtab = symtab_shdr;
         self.first_global = symtab_shdr.sh_info as usize;
 
-        self.initialize_sections(ctx);
+        let mut relas = HashMap::new();
+        for shdr in section_headers {
+            let name = shstrtab.get(shdr.sh_name as usize).unwrap();
+            if name.starts_with(".rela") {
+                let target = name[5..].to_string();
+                dbg!(&target);
+                let data = file.section_data_as_relas(&shdr).unwrap();
+                for rela in data {
+                    relas
+                        .entry(target.clone())
+                        .or_insert(Vec::new())
+                        .push(ElfRela { erela: rela });
+                }
+            }
+        }
+
+        self.initialize_sections(ctx, relas);
         self.initialize_symbols();
     }
 
-    fn initialize_sections(&mut self, ctx: &mut Context) {
+    fn initialize_sections(&mut self, ctx: &mut Context, mut relas: HashMap<String, Vec<ElfRela>>) {
         self.input_sections.resize(self.elf_sections.len(), None);
         for (i, elf_section) in self.elf_sections.iter().enumerate() {
             match elf_section.header.sh_type {
@@ -133,12 +150,17 @@ impl ObjectFile {
                     todo!("TODO:")
                 }
                 _ => {
-                    let input_section = InputSection::new(Arc::clone(elf_section));
+                    // Create a new section and attach relocations to it
+                    let relas = relas.remove(&elf_section.name).unwrap_or(Vec::new());
+                    let input_section = InputSection::new(Arc::clone(elf_section), relas);
                     self.input_sections[i] = Some(input_section.get_id());
                     ctx.set_input_section(input_section);
                 }
             }
         }
+
+        // TODO:
+        log::error!("TODO: Parse Relas")
     }
 
     fn initialize_symbols(&mut self) {
@@ -225,21 +247,27 @@ fn get_next_input_section_id() -> InputSectionId {
 pub struct InputSection {
     id: InputSectionId,
     pub elf_section: Arc<ElfSection>,
+    elf_relas: Vec<ElfRela>,
     /// Offset from the beginning of the output file
     offset: Option<u64>,
 }
 
 impl InputSection {
-    fn new(elf_section: Arc<ElfSection>) -> InputSection {
+    fn new(elf_section: Arc<ElfSection>, elf_relas: Vec<ElfRela>) -> InputSection {
         InputSection {
             id: get_next_input_section_id(),
             elf_section,
+            elf_relas,
             offset: None,
         }
     }
 
     pub fn get_id(&self) -> InputSectionId {
         self.id
+    }
+
+    pub fn get_relas(&self) -> &[ElfRela] {
+        &self.elf_relas
     }
 
     pub fn get_name(&self) -> &String {
@@ -316,4 +344,9 @@ impl Symbol {
         // TODO: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L302
         true
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ElfRela {
+    pub erela: Rela,
 }

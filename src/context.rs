@@ -122,17 +122,14 @@ impl Context {
                 .iter()
                 .zip(file.get_input_sections().iter())
             {
+                log::debug!("\t{:?}", elf_section.name);
                 if let Some(input_section) = input_section {
                     let input_section = self.get_input_section(*input_section);
                     let output_section = get_output_section_name(input_section.get_name());
-                    log::debug!(
-                        "\t{:?} (InputSection -> {})",
-                        elf_section.name,
-                        output_section
-                    );
+                    log::debug!("\t\tOutputSection: {:?}", output_section);
+                    let num_relas = input_section.get_relas().len();
+                    log::debug!("\t\tNumber of Relas: {}", num_relas);
                     continue;
-                } else {
-                    log::debug!("\t{:?}", elf_section.name);
                 }
             }
         }
