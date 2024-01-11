@@ -121,27 +121,27 @@ impl ObjectFile {
         self.elf_symtab = symtab_shdr;
         self.first_global = symtab_shdr.sh_info as usize;
 
-        let mut relas = HashMap::new();
+        let mut elf_rels = HashMap::new();
         for shdr in section_headers {
             let name = shstrtab.get(shdr.sh_name as usize).unwrap();
             if name.starts_with(".rela") {
                 let target = name[5..].to_string();
-                dbg!(&target);
                 let data = file.section_data_as_relas(&shdr).unwrap();
                 for rela in data {
-                    relas
+                    elf_rels
                         .entry(target.clone())
                         .or_insert(Vec::new())
-                        .push(ElfRela { erela: rela });
+                        .push(rela);
                 }
             }
         }
 
-        self.initialize_sections(ctx, relas);
+        self.initialize_sections(ctx);
         self.initialize_symbols(ctx);
+        self.initialize_relocations(ctx, elf_rels);
     }
 
-    fn initialize_sections(&mut self, ctx: &mut Context, mut relas: HashMap<String, Vec<ElfRela>>) {
+    fn initialize_sections(&mut self, ctx: &mut Context) {
         self.input_sections.resize(self.elf_sections.len(), None);
         for (i, elf_section) in self.elf_sections.iter().enumerate() {
             match elf_section.header.sh_type {
@@ -158,8 +158,7 @@ impl ObjectFile {
                 }
                 _ => {
                     // Create a new section and attach relocations to it
-                    let relas = relas.remove(&elf_section.name).unwrap_or(Vec::new());
-                    let input_section = InputSection::new(Arc::clone(elf_section), relas);
+                    let input_section = InputSection::new(Arc::clone(elf_section));
                     self.input_sections[i] = Some(input_section.get_id());
                     ctx.set_input_section(input_section);
                 }
@@ -177,7 +176,6 @@ impl ObjectFile {
             }
             let name = elf_symbol.name.clone();
             if i == 0 {
-                log::error!("Expected NULL Symbol at index 0, but found '{}'", name);
                 continue;
             }
             self.symbols[i] = Some(Arc::new(RefCell::new(Symbol {
@@ -203,6 +201,32 @@ impl ObjectFile {
             }));
             self.symbols[i] = Some(Arc::clone(&symbol));
             ctx.add_global_symbol(symbol);
+        }
+    }
+
+    fn initialize_relocations(
+        &mut self,
+        ctx: &mut Context,
+        mut elf_rels: HashMap<String, Vec<Rela>>,
+    ) {
+        for isec in self.input_sections.iter_mut() {
+            if let Some(isec) = isec {
+                let isec = ctx.get_input_section_mut(*isec);
+                let name = isec.get_name();
+                if let Some(rels) = elf_rels.remove(name) {
+                    let rels = rels
+                        .into_iter()
+                        .map(|rela| {
+                            let symbol = self.symbols[rela.r_sym as usize].as_ref().unwrap();
+                            ElfRela {
+                                erela: rela,
+                                symbol: Arc::clone(symbol),
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    isec.set_relas(rels);
+                }
+            }
         }
     }
 }
@@ -242,11 +266,11 @@ pub struct InputSection {
 }
 
 impl InputSection {
-    fn new(elf_section: Arc<ElfSection>, elf_relas: Vec<ElfRela>) -> InputSection {
+    fn new(elf_section: Arc<ElfSection>) -> InputSection {
         InputSection {
             id: get_next_input_section_id(),
             elf_section,
-            elf_relas,
+            elf_relas: Vec::new(),
             offset: None,
             output_section: None,
         }
@@ -254,6 +278,10 @@ impl InputSection {
 
     pub fn get_id(&self) -> InputSectionId {
         self.id
+    }
+
+    pub fn set_relas(&mut self, elf_relas: Vec<ElfRela>) {
+        self.elf_relas = elf_relas;
     }
 
     pub fn get_relas(&self) -> &[ElfRela] {
@@ -361,4 +389,5 @@ impl Symbol {
 #[derive(Debug, Clone)]
 pub struct ElfRela {
     pub erela: Rela,
+    pub symbol: Arc<RefCell<Symbol>>,
 }

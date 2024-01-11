@@ -1,7 +1,8 @@
-use std::{cell::RefCell, ops::Deref, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, ops::Deref, sync::Arc};
 
 use elf::{
     abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
+    relocation::Rela,
     section::Elf64_Shdr,
     segment::Elf64_Phdr,
     symbol::Elf64_Sym,
@@ -11,8 +12,9 @@ use crate::{
     config::{Config, PAGE_SIZE},
     context::Context,
     dummy,
-    input_section::Symbol,
+    input_section::{InputSectionId, Symbol},
     output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
+    relocation::{relocation_value, RelType},
     utils::align_to,
 };
 
@@ -304,25 +306,21 @@ impl Linker<'_> {
                     chunk.copy_buf(buf, &strtab_content);
                 }
                 OutputChunk::Symtab(chunk) => {
-                    // TODO: st_value and st_shndx must be set
-                    // 1. Set address to st_value. mold get symbol address by calling `Symbol::get_addr() const`
-                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L732
-                    // 2. Symbol::get_addr() const calls `InputSection::get_addr() const`
-                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1184
-                    // 3. In turn, it gets address from sh_addr.
-                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1218
-                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L1223
-                    // 4. sh_addr is set in `set_osec_offsets()`
-                    // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/main.cc#L567
-
-                    // TODO: rename OutputSection to `MergedSection`
-                    // `MergedSection` contains multiple `SectionFragment`s
                     chunk.copy_buf(buf, &symtab_content);
                 }
                 OutputChunk::Shstrtab(chunk) => {
                     chunk.copy_buf(buf, &shstrtab_content);
                 }
             }
+        }
+    }
+
+    pub fn relocation(&self, buf: &mut [u8]) {
+        let relocation_data = self.get_relocation_data();
+        for (file_ofs, value) in relocation_data {
+            let mut value = value.to_le_bytes();
+            value.reverse();
+            buf[file_ofs..file_ofs + 8].copy_from_slice(&value);
         }
     }
 
@@ -454,18 +452,22 @@ impl Linker<'_> {
             .map(|chunk| chunk.get_common())
     }
 
+    fn get_isec_addr(&self, id: InputSectionId) -> u64 {
+        let isec = self.ctx.get_input_section(id);
+        let isec_file_ofs = isec.get_offset().unwrap_or(0);
+        let osec_id = isec.get_output_section();
+        let osec_common = self.get_common_from_osec(osec_id).unwrap();
+        let osec_addr = osec_common.shdr.sh_addr;
+        let osec_file_ofs = osec_common.shdr.sh_offset;
+        osec_addr + (isec_file_ofs - osec_file_ofs)
+    }
+
     fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
         let file = self.ctx.get_file(symbol.file.unwrap());
         let shndx = symbol.esym.get_esym().st_shndx as usize;
         file.get_input_sections()[shndx].map(|isec_id| {
-            let isec = self.ctx.get_input_section(isec_id);
-            let isec_file_ofs = isec.get_offset().unwrap_or(0);
-            let osec = self.ctx.get_output_section(isec.get_output_section());
-            let osec_common = self.get_common_from_osec(osec.get_id());
-            let osec_addr = osec_common.map(|chunk| chunk.shdr.sh_addr).unwrap_or(0);
-            let osec_file_ofs = osec_common.map(|chunk| chunk.shdr.sh_offset).unwrap_or(0);
-
-            osec_addr + (isec_file_ofs - osec_file_ofs)
+            let isec_addr = self.get_isec_addr(isec_id);
+            isec_addr + symbol.esym.get_esym().st_value
         })
     }
 
@@ -474,5 +476,28 @@ impl Linker<'_> {
             let symbol = symbol.deref().borrow();
             self.get_symbol_addr(&symbol).unwrap_or(0)
         })
+    }
+
+    /// Returns [(file_ofs, u64)]
+    fn get_relocation_data(&self) -> Vec<(usize, u64)> {
+        let mut ret = Vec::new();
+        for file in self.ctx.files() {
+            for isec_id in file.get_input_sections() {
+                if let Some(isec_id) = isec_id {
+                    let isec_addr = self.get_isec_addr(*isec_id);
+                    let isec = self.ctx.get_input_section(*isec_id);
+                    for rel in isec.get_relas() {
+                        let symbol = rel.symbol.deref().borrow();
+                        let symbol_addr = self.get_symbol_addr(&symbol).unwrap();
+                        if let Some(value) = relocation_value(symbol_addr, isec_addr, &rel.erela) {
+                            let isec_file_ofs = isec.get_offset().unwrap();
+                            let file_ofs = (isec_file_ofs + rel.erela.r_offset) as usize;
+                            ret.push((file_ofs, value));
+                        }
+                    }
+                }
+            }
+        }
+        ret
     }
 }

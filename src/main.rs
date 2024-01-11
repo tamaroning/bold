@@ -11,6 +11,7 @@ mod context;
 mod input_section;
 mod linker;
 mod output_section;
+mod relocation;
 mod utils;
 
 fn main() {
@@ -165,6 +166,7 @@ fn main() {
     // Copy input sections to the output file
     log::info!("Copying sections to buffer");
     linker.copy_buf(&mut buf);
+    linker.relocation(&mut buf);
 
     log::info!("Writing buffer to file");
     let filepath = "a.o";
