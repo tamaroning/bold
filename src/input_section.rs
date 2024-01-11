@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use crate::{context::Context, dummy};
 use elf::{
@@ -34,7 +34,7 @@ pub struct ObjectFile {
     elf_symbols: Vec<Arc<ElfSymbol>>,
 
     input_sections: Vec<Option<InputSectionId>>,
-    symbols: Vec<Option<Symbol>>,
+    symbols: Vec<Option<Arc<RefCell<Symbol>>>>,
     is_dso: bool,
 }
 
@@ -76,7 +76,7 @@ impl ObjectFile {
         &self.input_sections
     }
 
-    pub fn get_symbols(&self) -> &[Option<Symbol>] {
+    pub fn get_symbols(&self) -> &[Option<Arc<RefCell<Symbol>>>] {
         &self.symbols
     }
 
@@ -131,7 +131,7 @@ impl ObjectFile {
         }
 
         self.initialize_sections(ctx, relas);
-        self.initialize_symbols();
+        self.initialize_symbols(ctx);
     }
 
     fn initialize_sections(&mut self, ctx: &mut Context, mut relas: HashMap<String, Vec<ElfRela>>) {
@@ -158,20 +158,23 @@ impl ObjectFile {
                 }
             }
         }
-
-        // TODO:
-        log::error!("TODO: Parse Relas")
     }
 
-    fn initialize_symbols(&mut self) {
+    fn initialize_symbols(&mut self, ctx: &mut Context) {
         self.symbols.resize(self.elf_symbols.len(), None);
 
         // Initialize local symbols
-        for (i, _elf_symbol) in self.elf_symbols.iter().enumerate() {
-            if i == self.first_global {
+        for (i, elf_symbol) in self.elf_symbols.iter().enumerate() {
+            if i >= self.first_global {
                 break;
             }
-            // TODO: what should be done?
+            let name = elf_symbol.name.clone();
+            self.symbols[i] = Some(Arc::new(RefCell::new(Symbol {
+                name,
+                file: None,
+                esym: Arc::clone(elf_symbol),
+                global: false,
+            })));
         }
 
         // Initialize global symbols
@@ -181,11 +184,14 @@ impl ObjectFile {
             }
             let name_end = elf_symbol.name.find('@').unwrap_or(elf_symbol.name.len());
             let name = elf_symbol.name[..name_end].to_string();
-            self.symbols[i] = Some(Symbol {
+            let symbol = Arc::new(RefCell::new(Symbol {
                 name,
                 file: None,
                 esym: Arc::clone(elf_symbol),
-            });
+                global: true,
+            }));
+            self.symbols[i] = Some(Arc::clone(&symbol));
+            ctx.add_global_symbol(symbol);
         }
     }
 
@@ -199,8 +205,7 @@ impl ObjectFile {
             let Some(symbol) = symbol else {
                 continue;
             };
-
-            symbol.file = Some(object_id);
+            symbol.borrow_mut().file = Some(object_id);
             // TODO: visibility
         }
     }
@@ -337,12 +342,17 @@ pub struct Symbol {
     /// object file where the symbol is defined
     pub file: Option<ObjectId>,
     pub esym: Arc<ElfSymbol>,
+    global: bool,
 }
 
 impl Symbol {
     pub fn should_write(&self) -> bool {
         // TODO: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L302
         true
+    }
+
+    pub fn is_global(&self) -> bool {
+        self.global
     }
 }
 

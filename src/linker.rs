@@ -1,3 +1,5 @@
+use std::{cell::RefCell, sync::Arc};
+
 use elf::{
     abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
     section::Elf64_Shdr,
@@ -8,7 +10,7 @@ use elf::{
 use crate::{
     config::{Config, PAGE_SIZE},
     context::Context,
-    dummy,
+    input_section::Symbol,
     output_section::{get_output_section_name, OutputChunk, OutputSectionId},
     utils::{align_to, padding},
 };
@@ -103,7 +105,8 @@ impl Linker<'_> {
         let num_shdrs = self.get_shdrs().len();
         let num_phdrs = self.create_phdr().len();
         let shstrtab_size = shstrtab_content.len() as u64;
-        let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
+        let symtab_content = self.get_symtab();
+        let strtab_content = self.get_strtab();
         let strtab_shndx = self
             .chunks
             .iter()
@@ -225,7 +228,8 @@ impl Linker<'_> {
             })
             .unwrap();
         let shstrtab_content = self.get_shstrtab_content();
-        let (symtab_content, strtab_content) = self.get_symtab_and_strtab();
+        let symtab_content = self.get_symtab();
+        let strtab_content = self.get_strtab();
         let shdrs = self.get_shdrs();
         let phdrs = self.create_phdr();
         // copy all other sections and headers
@@ -248,6 +252,8 @@ impl Linker<'_> {
                     chunk.copy_buf(buf, &phdrs);
                 }
                 OutputChunk::Section(chunk) => {
+                    // TODO: apply relocation
+                    // mold: apply_reloc_alloc
                     let chunk = self.ctx.get_output_section(chunk.get_id());
                     chunk.copy_buf(&self.ctx, buf);
                 }
@@ -299,25 +305,50 @@ impl Linker<'_> {
         content
     }
 
-    fn get_symtab_and_strtab(&self) -> (Vec<Elf64_Sym>, Vec<u8>) {
-        let mut symtab_content = vec![];
-        let mut strtab_content = vec![0];
+    fn get_symbols(&self) -> Vec<&Arc<RefCell<Symbol>>> {
+        let mut symbols = vec![];
         for file in self.ctx.files() {
             for sym in file.get_symbols() {
-                if let Some(sym) = sym {
-                    if sym.should_write() {
-                        let mut esym = sym.esym.get();
-                        esym.st_name = strtab_content.len() as u32;
-                        let name = &sym.name;
-
-                        symtab_content.push(esym);
-                        strtab_content.extend_from_slice(name.as_bytes());
-                        strtab_content.push(0);
+                if let Some(symbol_ref) = sym {
+                    let symbol = symbol_ref.borrow();
+                    if symbol.file == Some(file.get_id()) {
+                        if symbol.should_write() {
+                            symbols.push(symbol_ref);
+                        }
                     }
                 }
             }
         }
-        (symtab_content, strtab_content)
+        symbols
+    }
+
+    fn get_symtab(&self) -> Vec<Elf64_Sym> {
+        let mut symtab_content = vec![];
+        for file in self.ctx.files() {
+            for sym in file.get_symbols() {
+                if let Some(symbol) = sym {
+                    let symbol = symbol.borrow();
+                    if symbol.should_write() && symbol.file == Some(file.get_id()) {
+                        symtab_content.push(symbol.esym.get());
+                    }
+                }
+            }
+        }
+        symtab_content
+    }
+
+    fn get_strtab(&self) -> Vec<u8> {
+        let mut strtab_content = vec![0];
+        let symbols = self.get_symbols();
+        for symbol_ref in symbols {
+            let sym = symbol_ref.borrow();
+            let mut esym = sym.esym.get();
+            esym.st_name = strtab_content.len() as u32;
+            let name = &sym.name;
+            strtab_content.extend_from_slice(name.as_bytes());
+            strtab_content.push(0);
+        }
+        strtab_content
     }
 
     fn create_phdr(&self) -> Vec<Elf64_Phdr> {

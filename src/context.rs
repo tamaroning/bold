@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use crate::{
-    input_section::{InputSection, InputSectionId, ObjectFile, ObjectId},
+    input_section::{InputSection, InputSectionId, ObjectFile, ObjectId, Symbol},
     output_section::{get_output_section_name, OutputSection, OutputSectionId},
 };
 
@@ -24,6 +24,7 @@ pub struct Context {
     file_pool: HashMap<ObjectId, ObjectFile>,
     input_sections: HashMap<InputSectionId, InputSection>,
     output_sections: HashMap<OutputSectionId, OutputSection>,
+    global_symbols: HashMap<String, Arc<RefCell<Symbol>>>,
 }
 
 impl Context {
@@ -32,6 +33,7 @@ impl Context {
             file_pool: HashMap::new(),
             output_sections: HashMap::new(),
             input_sections: HashMap::new(),
+            global_symbols: HashMap::new(),
         }
     }
 
@@ -57,6 +59,15 @@ impl Context {
 
     pub fn get_file_mut(&mut self, id: ObjectId) -> &mut ObjectFile {
         self.file_pool.get_mut(&id).unwrap()
+    }
+
+    pub fn add_global_symbol(&mut self, symbol: Arc<RefCell<Symbol>>) {
+        let name = symbol.borrow().name.clone();
+        self.global_symbols.insert(name, symbol);
+    }
+
+    pub fn get_global_symbol(&self, name: &String) -> Option<&Arc<RefCell<Symbol>>> {
+        self.global_symbols.get(name)
     }
 
     pub fn get_input_section(&self, id: InputSectionId) -> &InputSection {
@@ -140,6 +151,7 @@ impl Context {
             log::debug!("Symbols in '{}'", file.get_file_name());
             for symbol in file.get_symbols().iter() {
                 if let Some(symbol) = symbol {
+                    let symbol = symbol.borrow();
                     let definiton_loc = if let Some(file_id) = symbol.file {
                         let file = self.get_file(file_id);
                         file.get_file_name().to_owned()
@@ -149,6 +161,24 @@ impl Context {
                     log::debug!("\t\"{}\" ({})", symbol.name, definiton_loc);
                 }
             }
+        }
+        let global_symbols = self
+            .global_symbols
+            .iter()
+            .map(|(_, symbol)| {
+                let symbol = symbol.borrow();
+                let definiton_loc = if let Some(file_id) = symbol.file {
+                    let file = self.get_file(file_id);
+                    file.get_file_name().to_owned()
+                } else {
+                    "undefined".to_owned()
+                };
+                format!("\t\"{}\" ({})", symbol.name, definiton_loc)
+            })
+            .collect::<Vec<String>>();
+        log::debug!("Global symbols:");
+        for symbol in global_symbols {
+            log::debug!("{}", symbol);
         }
     }
 }
