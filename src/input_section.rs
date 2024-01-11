@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, sync::Arc};
 use crate::{context::Context, dummy};
 use elf::{
     endian::AnyEndian,
-    relocation::{Elf64_Rela, Rela},
+    relocation::Rela,
     section::SectionHeader,
     symbol::{Elf64_Sym, Symbol as ElfSymbolData},
     ElfBytes,

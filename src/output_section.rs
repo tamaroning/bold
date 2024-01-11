@@ -397,9 +397,6 @@ impl Symtab {
 
     pub fn copy_buf(&self, buf: &mut [u8], data: &[Elf64_Sym]) {
         let mut offset = self.common.shdr.sh_offset as usize;
-        // NULL symbol
-        offset += write_to::<Elf64_Sym>(buf, offset, &dummy!(Elf64_Sym));
-        // Other symbols
         for sym in data {
             let size = write_to(buf, offset, sym);
             offset += size;
