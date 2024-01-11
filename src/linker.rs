@@ -101,12 +101,18 @@ impl Linker<'_> {
             let output_section =
                 self.ctx
                     .get_or_create_output_section_mut(&output_section_name, sh_type, sh_flags);
+            let osec_id = output_section.get_id();
 
-            if output_section.sections.is_empty() {
+            if output_section.get_input_sections_mut().is_empty() {
                 let section = &output_section;
                 chunks.push(section.get_id());
             }
-            output_section.sections.push(input_section_id);
+            output_section
+                .get_input_sections_mut()
+                .push(input_section_id);
+
+            let input_section = self.ctx.get_input_section_mut(input_section_id);
+            input_section.set_output_section(osec_id);
         }
         chunks
     }
@@ -202,16 +208,14 @@ impl Linker<'_> {
                 file_ofs = align_to(file_ofs, PAGE_SIZE) + vaddr % PAGE_SIZE;
             }
 
+            // Align to sh_addralign
             let sh_addralign = chunk.get_common().shdr.sh_addralign;
             file_ofs = align_to(file_ofs, sh_addralign);
             vaddr = align_to(vaddr, sh_addralign);
 
-            let sh_addralign = chunk.get_common().shdr.sh_addralign;
-            file_ofs += padding(file_ofs, sh_addralign);
             chunk.set_offset(&mut self.ctx, file_ofs);
 
             // Make sure to get sh_size after `chunk.set_offset` because we set a value to sh_size in it
-            // TODO: bss and tbss
             if chunk.get_common().shdr.sh_flags & SHF_ALLOC as u64 != 0 {
                 chunk.get_common_mut().shdr.sh_addr = vaddr;
             }
@@ -351,7 +355,6 @@ impl Linker<'_> {
                     let symbol = symbol_ref.borrow();
                     if symbol.file == Some(file.get_id()) {
                         if symbol.should_write() && symbol.file == Some(file.get_id()) {
-                            dbg!(&symbol.name);
                             symbols.push(symbol_ref);
                         }
                     }
@@ -427,12 +430,35 @@ impl Linker<'_> {
     }
 
     fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
-        log::error!("get_symbol_addr(\"{}\") is not implemented", symbol.name);
-        Some(1)
+        let file = self.ctx.get_file(symbol.file.unwrap());
+        let shndx = symbol.esym.get_esym().st_shndx as usize;
+        file.get_input_sections()[shndx].map(|isec_id| {
+            let isec = self.ctx.get_input_section(isec_id);
+            let isec_file_ofs = isec.get_offset().unwrap_or(0);
+            let osec = self.ctx.get_output_section(isec.get_output_section());
+            let osec_common = self
+                .chunks
+                .iter()
+                .find(|chunk| {
+                    if let OutputChunk::Section(chunk) = chunk {
+                        chunk.get_id() == osec.get_id()
+                    } else {
+                        false
+                    }
+                })
+                .map(|chunk| chunk.get_common());
+
+            let osec_addr = osec_common.map(|chunk| chunk.shdr.sh_addr).unwrap_or(0);
+            let osec_file_ofs = osec_common.map(|chunk| chunk.shdr.sh_offset).unwrap_or(0);
+
+            osec_addr + (isec_file_ofs - osec_file_ofs)
+        })
     }
 
-    fn get_global_symbol_addr(&self, symbol: &str) -> Option<u64> {
-        log::error!("get_global_symbol_addr(\"{}\") is not implemented", symbol);
-        Some(0)
+    fn get_global_symbol_addr(&self, name: &str) -> Option<u64> {
+        self.ctx.get_global_symbol(name).map(|symbol| {
+            let symbol = symbol.deref().borrow();
+            self.get_symbol_addr(&symbol).unwrap_or(0)
+        })
     }
 }

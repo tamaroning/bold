@@ -70,10 +70,10 @@ impl OutputChunk {
             OutputChunk::Phdr(chunk) => chunk.common.shdr.sh_offset = offset,
             OutputChunk::Section(osec_ref) => {
                 let osec = ctx.get_output_section_mut(osec_ref.get_id());
-                let offset_start = offset;
                 osec_ref.common.shdr.sh_offset = offset;
+                let offset_start = offset;
 
-                for input_section in osec.sections.clone() {
+                for input_section in osec.input_sections.clone() {
                     let input_section = ctx.get_input_section_mut(input_section);
                     input_section.set_offset(offset);
                     offset += input_section.get_size();
@@ -295,7 +295,7 @@ fn get_next_output_section_id() -> OutputSectionId {
 pub struct OutputSection {
     id: OutputSectionId,
     name: String,
-    pub sections: Vec<InputSectionId>,
+    input_sections: Vec<InputSectionId>,
     sh_type: u32,
     sh_flags: u64,
 }
@@ -305,7 +305,7 @@ impl OutputSection {
         OutputSection {
             id: get_next_output_section_id(),
             name,
-            sections: vec![],
+            input_sections: vec![],
             sh_type,
             sh_flags,
         }
@@ -319,6 +319,14 @@ impl OutputSection {
         self.name.clone()
     }
 
+    pub fn get_input_sections(&self) -> &Vec<InputSectionId> {
+        &self.input_sections
+    }
+
+    pub fn get_input_sections_mut(&mut self) -> &mut Vec<InputSectionId> {
+        &mut self.input_sections
+    }
+
     pub fn get_sh_type(&self) -> u32 {
         self.sh_type
     }
@@ -328,7 +336,7 @@ impl OutputSection {
     }
 
     pub fn copy_buf(&self, ctx: &Context, buf: &mut [u8]) {
-        for input_section in self.sections.iter() {
+        for input_section in self.input_sections.iter() {
             let input_section = ctx.get_input_section(*input_section);
             input_section.copy_buf(buf);
         }
@@ -338,7 +346,7 @@ impl OutputSection {
         format!(
             "OutputSection \"{}\" (containing {} sections)",
             self.name,
-            self.sections.len()
+            self.input_sections.len()
         )
     }
 }

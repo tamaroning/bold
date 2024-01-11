@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
-use crate::{context::Context, dummy};
+use crate::{context::Context, dummy, output_section::OutputSectionId};
 use elf::{
     endian::AnyEndian,
     relocation::Rela,
@@ -30,10 +30,13 @@ pub struct ObjectFile {
     // Elf sections and symbols
     elf_symtab: SectionHeader,
     first_global: usize,
+    /// All sections corresponding to each section header
     elf_sections: Vec<Arc<ElfSection>>,
+    /// All symbols corresponding to each symbol table entry
     elf_symbols: Vec<Arc<ElfSymbol>>,
-
+    /// sections corresponding to each section header
     input_sections: Vec<Option<InputSectionId>>,
+    /// symbols corresponding to each symbol table entry
     symbols: Vec<Option<Arc<RefCell<Symbol>>>>,
     is_dso: bool,
 }
@@ -235,6 +238,7 @@ pub struct InputSection {
     elf_relas: Vec<ElfRela>,
     /// Offset from the beginning of the output file
     offset: Option<u64>,
+    output_section: Option<OutputSectionId>,
 }
 
 impl InputSection {
@@ -244,6 +248,7 @@ impl InputSection {
             elf_section,
             elf_relas,
             offset: None,
+            output_section: None,
         }
     }
 
@@ -267,16 +272,24 @@ impl InputSection {
         self.elf_section.header.sh_size
     }
 
-    fn get_offset(&self) -> u64 {
-        self.offset.unwrap()
+    pub fn get_offset(&self) -> Option<u64> {
+        self.offset
     }
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = Some(offset);
     }
 
+    pub fn get_output_section(&self) -> OutputSectionId {
+        self.output_section.unwrap()
+    }
+
+    pub fn set_output_section(&mut self, output_section: OutputSectionId) {
+        self.output_section = Some(output_section);
+    }
+
     pub fn copy_buf(&self, buf: &mut [u8]) {
-        let offset = self.get_offset();
+        let offset = self.get_offset().unwrap();
         let size = self.get_size();
         let data = &self.elf_section.data;
         buf[offset as usize..(offset + size) as usize].copy_from_slice(data);

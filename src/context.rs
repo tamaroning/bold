@@ -66,7 +66,7 @@ impl Context {
         self.global_symbols.insert(name, symbol);
     }
 
-    pub fn get_global_symbol(&self, name: &String) -> Option<&Arc<RefCell<Symbol>>> {
+    pub fn get_global_symbol(&self, name: &str) -> Option<&Arc<RefCell<Symbol>>> {
         self.global_symbols.get(name)
     }
 
