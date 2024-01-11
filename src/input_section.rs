@@ -306,6 +306,7 @@ impl std::fmt::Debug for ElfSymbol {
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
+    /// object file where the symbol is defined
     pub file: Option<ObjectId>,
     pub esym: Arc<ElfSymbol>,
 }
