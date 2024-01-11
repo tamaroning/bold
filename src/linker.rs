@@ -265,6 +265,7 @@ impl Linker<'_> {
                 }
             })
             .unwrap();
+        let e_entry = self.get_global_symbol_addr("_start").unwrap_or(0);
         let shstrtab_content = self.get_shstrtab_content();
         let (symtab_content, strtab_content) = self.get_symtab();
         let shdrs = self.get_shdrs();
@@ -275,7 +276,7 @@ impl Linker<'_> {
                 // FIXME: dummy
                 OutputChunk::Ehdr(chunk) => chunk.copy_buf(
                     buf,
-                    0,
+                    e_entry,
                     e_phoff,
                     e_shoff,
                     phdrs.len() as u16,
@@ -367,8 +368,10 @@ impl Linker<'_> {
         for symbol_ref in symbols {
             let sym = symbol_ref.borrow();
             let mut esym = sym.esym.get();
-            // TODO: set st_name, st_value, st_addr
             esym.st_name = strtab_content.len() as u32;
+            esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
+            // TODO: set st_shndx
+            log::error!("st_shndx is not implemented");
 
             symtab_content.push(esym);
             strtab_content.extend_from_slice(sym.name.as_bytes());
@@ -421,5 +424,15 @@ impl Linker<'_> {
             }
         }
         phdrs
+    }
+
+    fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
+        log::error!("get_symbol_addr(\"{}\") is not implemented", symbol.name);
+        Some(1)
+    }
+
+    fn get_global_symbol_addr(&self, symbol: &str) -> Option<u64> {
+        log::error!("get_global_symbol_addr(\"{}\") is not implemented", symbol);
+        Some(0)
     }
 }
