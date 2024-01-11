@@ -1,8 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, ops::Deref, sync::Arc};
+use std::{cell::RefCell, ops::Deref, sync::Arc};
 
 use elf::{
     abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
-    relocation::Rela,
     section::Elf64_Shdr,
     segment::Elf64_Phdr,
     symbol::Elf64_Sym,
@@ -14,7 +13,7 @@ use crate::{
     dummy,
     input_section::{InputSectionId, Symbol},
     output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
-    relocation::{relocation_value, RelType},
+    relocation::{relocation_size, relocation_value, RelValue},
     utils::align_to,
 };
 
@@ -317,10 +316,15 @@ impl Linker<'_> {
 
     pub fn relocation(&self, buf: &mut [u8]) {
         let relocation_data = self.get_relocation_data();
-        for (file_ofs, value) in relocation_data {
-            let mut value = value.to_le_bytes();
-            value.reverse();
-            buf[file_ofs..file_ofs + 8].copy_from_slice(&value);
+        for relval in relocation_data {
+            let RelValue {
+                file_ofs,
+                value,
+                size,
+            } = relval;
+            log::debug!("Relocation: {:#x} -> {:#x}", file_ofs, value);
+            let value = value.to_le_bytes();
+            buf[file_ofs..file_ofs + size].copy_from_slice(&value[0..size]);
         }
     }
 
@@ -479,7 +483,7 @@ impl Linker<'_> {
     }
 
     /// Returns [(file_ofs, u64)]
-    fn get_relocation_data(&self) -> Vec<(usize, u64)> {
+    fn get_relocation_data(&self) -> Vec<RelValue> {
         let mut ret = Vec::new();
         for file in self.ctx.files() {
             for isec_id in file.get_input_sections() {
@@ -492,7 +496,11 @@ impl Linker<'_> {
                         if let Some(value) = relocation_value(symbol_addr, isec_addr, &rel.erela) {
                             let isec_file_ofs = isec.get_offset().unwrap();
                             let file_ofs = (isec_file_ofs + rel.erela.r_offset) as usize;
-                            ret.push((file_ofs, value));
+                            ret.push(RelValue {
+                                file_ofs,
+                                value,
+                                size: relocation_size(&rel.erela),
+                            });
                         }
                     }
                 }

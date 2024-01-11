@@ -1,5 +1,12 @@
 use elf::{abi, relocation::Rela};
 
+#[derive(Debug)]
+pub struct RelValue {
+    pub file_ofs: usize,
+    pub value: u64,
+    pub size: usize,
+}
+
 // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/mold.h#L312
 #[derive(Debug)]
 pub enum RelType {
@@ -32,5 +39,16 @@ pub fn relocation_value(symbol_addr: u64, isec_addr: u64, rela: &Rela) -> Option
         RelType::Pc => Some((s as i64 + a - p as i64) as u64),
         RelType::Abs => Some((s as i64 + a) as u64),
         _ => todo!(),
+    }
+}
+
+pub fn relocation_size(rela: &Rela) -> usize {
+    match rela.r_type {
+        abi::R_X86_64_NONE => 0,
+        abi::R_X86_64_8 => 1,
+        abi::R_X86_64_16 => 2,
+        abi::R_X86_64_32 => 4,
+        abi::R_X86_64_32S => 4,
+        _ => panic!("TODO: relocation type: {}", rela.r_type),
     }
 }
