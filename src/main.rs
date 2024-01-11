@@ -1,4 +1,4 @@
-use std::{io::Write, os::unix::fs::PermissionsExt, path::Path};
+use std::{io::Write, path::Path};
 
 use crate::{
     context::Context,
@@ -174,7 +174,11 @@ fn main() {
     let filepath = Path::new("a.out");
     let mut f = std::fs::File::create(filepath).unwrap();
     f.write_all(&buf).unwrap();
-    f.metadata().unwrap().permissions().set_mode(777);
+    let _ = std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(filepath)
+        .output()
+        .expect("Failed to execute chmod");
     log::info!(
         "Successfully wrote to {}",
         std::fs::canonicalize(filepath).unwrap().to_str().unwrap()
