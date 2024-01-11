@@ -13,7 +13,7 @@ use crate::{
     dummy,
     input_section::Symbol,
     output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
-    utils::{align_to, padding},
+    utils::align_to,
 };
 
 pub struct Linker<'ctx> {
@@ -183,7 +183,8 @@ impl Linker<'_> {
     }
 
     pub fn set_section_indices(&mut self) {
-        let mut shndx = 0;
+        // shndx = 0 is reserved for SHN_UNDEF
+        let mut shndx = 1;
         for chunk in self.chunks.iter_mut() {
             if !chunk.is_header() {
                 let common = chunk.get_common_mut();
@@ -326,7 +327,7 @@ impl Linker<'_> {
     }
 
     fn get_shdrs(&self) -> Vec<Elf64_Shdr> {
-        let mut shdrs = vec![];
+        let mut shdrs = vec![dummy!(Elf64_Shdr)];
         for chunk in &self.chunks {
             if !chunk.is_header() {
                 shdrs.push(chunk.get_common().get_elf64_shdr());
