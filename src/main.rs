@@ -169,5 +169,5 @@ fn main() {
     let filepath = "a.o";
     std::fs::write(filepath, &buf).unwrap();
 
-    log::debug!("Successfully wrote to {}", filepath);
+    log::info!("Successfully wrote to {}", filepath);
 }

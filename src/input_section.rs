@@ -64,6 +64,10 @@ impl ObjectFile {
         &self.file_name
     }
 
+    pub fn get_first_global(&self) -> usize {
+        self.first_global
+    }
+
     pub fn get_elf_sections(&self) -> &[Arc<ElfSection>] {
         &self.elf_sections
     }
@@ -169,6 +173,10 @@ impl ObjectFile {
                 break;
             }
             let name = elf_symbol.name.clone();
+            if i == 0 {
+                log::error!("Expected NULL Symbol at index 0, but found '{}'", name);
+                continue;
+            }
             self.symbols[i] = Some(Arc::new(RefCell::new(Symbol {
                 name,
                 file: None,
@@ -192,34 +200,6 @@ impl ObjectFile {
             }));
             self.symbols[i] = Some(Arc::clone(&symbol));
             ctx.add_global_symbol(symbol);
-        }
-    }
-
-    pub fn register_defined_symbols(&mut self) {
-        let object_id = self.get_id();
-        for (i, symbol) in self.symbols.iter_mut().enumerate() {
-            let esym = &self.elf_symbols[i];
-            if esym.sym.is_undefined() {
-                continue;
-            }
-            let Some(symbol) = symbol else {
-                continue;
-            };
-            symbol.borrow_mut().file = Some(object_id);
-            // TODO: visibility
-        }
-    }
-
-    pub fn register_undefined_symbols(&mut self) {
-        for (esym, symbol) in self.elf_symbols.iter().zip(self.symbols.iter()) {
-            if esym.sym.is_undefined() {
-                continue;
-            }
-            let Some(_) = symbol else {
-                continue;
-            };
-
-            // TODO: do something for an archive file
         }
     }
 }
@@ -318,6 +298,10 @@ pub fn is_common(sym: &ElfSymbolData) -> bool {
 }
 
 impl ElfSymbol {
+    pub fn get_esym(&self) -> &ElfSymbolData {
+        &self.sym
+    }
+
     pub fn get(&self) -> Elf64_Sym {
         Elf64_Sym {
             st_name: self.sym.st_name,
@@ -327,6 +311,10 @@ impl ElfSymbol {
             st_value: self.sym.st_value,
             st_size: self.sym.st_size,
         }
+    }
+
+    pub fn get_name(&self) -> &String {
+        &self.name
     }
 }
 

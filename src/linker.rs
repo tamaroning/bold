@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{borrow::BorrowMut, cell::RefCell, ops::Deref, sync::Arc};
 
 use elf::{
     abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
@@ -35,11 +35,49 @@ impl Linker<'_> {
         &self.ctx
     }
 
+    /// Resolve all symbols
     pub fn resolve_symbols(&mut self) {
         // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L536
-        for file in self.ctx.files_mut() {
-            file.register_defined_symbols();
-            file.register_undefined_symbols();
+
+        // Set file to symbols defined in the object file
+        for file in self.ctx.files() {
+            let object_id = file.get_id();
+            for (i, symbol) in file.get_symbols().iter().enumerate() {
+                let esym = &file.get_elf_symbols()[i];
+                if esym.get_esym().is_undefined() {
+                    continue;
+                }
+                let Some(symbol) = symbol else {
+                    continue;
+                };
+                let symbol = symbol.deref();
+                symbol.borrow_mut().file = Some(object_id);
+                // TODO: visibility?
+            }
+        }
+
+        // Symbols defined in other object files
+        for file in self.ctx.files() {
+            for (i, symbol) in file.get_symbols().iter().enumerate() {
+                if let Some(symbol) = symbol {
+                    if i < file.get_first_global() {
+                        continue;
+                    }
+
+                    let esym = &file.get_elf_symbols()[i];
+                    if !esym.get_esym().is_undefined() {
+                        continue;
+                    }
+                    let name = esym.get_name();
+                    let global_symbol = self.ctx.get_global_symbol(name);
+                    let Some(global_symbol) = global_symbol else {
+                        panic!("Symbol \"{}\" is not defined", name);
+                    };
+                    let object_id = global_symbol.deref().borrow().file;
+                    assert!(object_id.is_some());
+                    symbol.deref().borrow_mut().file = object_id;
+                }
+            }
         }
     }
 
@@ -312,7 +350,7 @@ impl Linker<'_> {
                 if let Some(symbol_ref) = sym {
                     let symbol = symbol_ref.borrow();
                     if symbol.file == Some(file.get_id()) {
-                        if symbol.should_write() {
+                        if symbol.should_write() && symbol.file == Some(file.get_id()) {
                             symbols.push(symbol_ref);
                         }
                     }
@@ -324,15 +362,11 @@ impl Linker<'_> {
 
     fn get_symtab(&self) -> Vec<Elf64_Sym> {
         let mut symtab_content = vec![];
-        for file in self.ctx.files() {
-            for sym in file.get_symbols() {
-                if let Some(symbol) = sym {
-                    let symbol = symbol.borrow();
-                    if symbol.should_write() && symbol.file == Some(file.get_id()) {
-                        symtab_content.push(symbol.esym.get());
-                    }
-                }
-            }
+        let symbols = self.get_symbols();
+        for symbol_ref in symbols {
+            let sym = symbol_ref.borrow();
+            let esym = sym.esym.get();
+            symtab_content.push(esym);
         }
         symtab_content
     }
