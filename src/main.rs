@@ -1,3 +1,5 @@
+use std::{io::Write, os::unix::fs::PermissionsExt, path::Path};
+
 use crate::{
     context::Context,
     input_section::ObjectFile,
@@ -169,8 +171,12 @@ fn main() {
     linker.relocation(&mut buf);
 
     log::info!("Writing buffer to file");
-    let filepath = "a.o";
-    std::fs::write(filepath, &buf).unwrap();
-
-    log::info!("Successfully wrote to {}", filepath);
+    let filepath = Path::new("a.out");
+    let mut f = std::fs::File::create(filepath).unwrap();
+    f.write_all(&buf).unwrap();
+    f.metadata().unwrap().permissions().set_mode(777);
+    log::info!(
+        "Successfully wrote to {}",
+        std::fs::canonicalize(filepath).unwrap().to_str().unwrap()
+    );
 }
