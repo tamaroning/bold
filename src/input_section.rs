@@ -311,6 +311,7 @@ pub fn is_common(sym: &ElfSymbolData) -> bool {
 }
 
 impl ElfSymbol {
+    /// Return Elf_Sym definied in the object file
     pub fn get_esym(&self) -> &ElfSymbolData {
         &self.sym
     }

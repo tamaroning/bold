@@ -12,7 +12,7 @@ use crate::{
     context::Context,
     dummy,
     input_section::Symbol,
-    output_section::{get_output_section_name, OutputChunk, OutputSectionId},
+    output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
     utils::{align_to, padding},
 };
 
@@ -373,9 +373,20 @@ impl Linker<'_> {
             let mut esym = sym.esym.get();
             esym.st_name = strtab_content.len() as u32;
             esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
-            // TODO: set st_shndx
-            log::error!("st_shndx is not implemented");
 
+            let file = self.ctx.get_file(sym.file.unwrap());
+            let isec = file.get_input_sections()[sym.esym.get_esym().st_shndx as usize].unwrap();
+            let isec = self.ctx.get_input_section(isec);
+            let osec_id = isec.get_output_section();
+            let common = self.get_common_from_osec(osec_id);
+            esym.st_shndx = common.map(|chunk| chunk.shndx.unwrap() as u16).unwrap();
+
+            log::debug!(
+                "Symbol: {} (st_value: {:#x}, st_shndx: {})",
+                sym.name,
+                esym.st_value,
+                esym.st_shndx
+            );
             symtab_content.push(esym);
             strtab_content.extend_from_slice(sym.name.as_bytes());
             strtab_content.push(0);
@@ -429,6 +440,19 @@ impl Linker<'_> {
         phdrs
     }
 
+    fn get_common_from_osec(&self, id: OutputSectionId) -> Option<&ChunkInfo> {
+        self.chunks
+            .iter()
+            .find(|chunk| {
+                if let OutputChunk::Section(chunk) = chunk {
+                    chunk.get_id() == id
+                } else {
+                    false
+                }
+            })
+            .map(|chunk| chunk.get_common())
+    }
+
     fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
         let file = self.ctx.get_file(symbol.file.unwrap());
         let shndx = symbol.esym.get_esym().st_shndx as usize;
@@ -436,18 +460,7 @@ impl Linker<'_> {
             let isec = self.ctx.get_input_section(isec_id);
             let isec_file_ofs = isec.get_offset().unwrap_or(0);
             let osec = self.ctx.get_output_section(isec.get_output_section());
-            let osec_common = self
-                .chunks
-                .iter()
-                .find(|chunk| {
-                    if let OutputChunk::Section(chunk) = chunk {
-                        chunk.get_id() == osec.get_id()
-                    } else {
-                        false
-                    }
-                })
-                .map(|chunk| chunk.get_common());
-
+            let osec_common = self.get_common_from_osec(osec.get_id());
             let osec_addr = osec_common.map(|chunk| chunk.shdr.sh_addr).unwrap_or(0);
             let osec_file_ofs = osec_common.map(|chunk| chunk.shdr.sh_offset).unwrap_or(0);
 

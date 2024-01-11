@@ -133,6 +133,7 @@ fn main() {
     // FIXME: update_shdr should be called here?
 
     // Set section indices
+    log::debug!("Setting section indices");
     linker.set_section_indices();
 
     // TODO: eh_frame
