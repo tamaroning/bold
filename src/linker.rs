@@ -71,13 +71,15 @@ impl Linker<'_> {
                         continue;
                     }
                     let name = esym.get_name();
-                    let global_symbol = self.ctx.get_global_symbol(name);
-                    let Some(global_symbol) = global_symbol else {
-                        panic!("Symbol \"{}\" is not defined", name);
+                    let Some(global_symbol) = self.ctx.get_global_symbol(name).map(Arc::clone)
+                    else {
+                        panic!("Symbol {} is not defined", name)
                     };
                     let object_id = global_symbol.deref().borrow().file;
                     assert!(object_id.is_some());
-                    symbol.deref().borrow_mut().file = object_id;
+                    let mut symbol = symbol.deref().borrow_mut();
+                    symbol.file = global_symbol.deref().borrow().file;
+                    symbol.esym = Arc::clone(&global_symbol.deref().borrow().esym);
                 }
             }
         }
@@ -372,7 +374,7 @@ impl Linker<'_> {
         let mut strtab_content = vec![0];
         let symbols = self.get_symbols();
         for symbol_ref in symbols {
-            let sym = symbol_ref.borrow();
+            let sym = symbol_ref.borrow_mut();
             let mut esym = sym.esym.get();
             esym.st_name = strtab_content.len() as u32;
             esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
@@ -469,6 +471,7 @@ impl Linker<'_> {
     fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
         let file = self.ctx.get_file(symbol.file.unwrap());
         let shndx = symbol.esym.get_esym().st_shndx as usize;
+        dbg!(&symbol.name, file.get_file_name(), shndx);
         file.get_input_sections()[shndx].map(|isec_id| {
             let isec_addr = self.get_isec_addr(isec_id);
             isec_addr + symbol.esym.get_esym().st_value
