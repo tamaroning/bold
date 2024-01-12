@@ -1,6 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, io::Read, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
-use crate::{context::Context, dummy, output_section::OutputSectionId};
+use crate::{context::Context, output_section::OutputSectionId};
 use elf::{
     endian::AnyEndian,
     relocation::Rela,
@@ -123,7 +123,6 @@ impl ObjectFile {
     pub fn parse(&mut self, ctx: &mut Context) {
         let file = ElfBytes::<AnyEndian>::minimal_parse(&self.data).expect("Open ELF file failed");
         self.is_dso = file.ehdr.e_type == elf::abi::ET_DYN;
-        log::debug!("dso: {}", self.is_dso);
 
         let shstrtab_shdr = file.section_header_by_name(".shstrtab").unwrap().unwrap();
         let shstrtab = file.section_data_as_strtab(&shstrtab_shdr).unwrap();

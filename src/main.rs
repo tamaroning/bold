@@ -33,7 +33,7 @@ fn main() {
     let mut ctx = Context::new();
 
     for file in files.iter_mut() {
-        log::info!("Parsing {}", file.get_file_name());
+        log::debug!("Parsing {}", file.get_file_name());
         file.parse(&mut ctx);
     }
 
