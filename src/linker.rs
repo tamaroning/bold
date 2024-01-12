@@ -471,7 +471,6 @@ impl Linker<'_> {
     fn get_symbol_addr(&self, symbol: &Symbol) -> Option<u64> {
         let file = self.ctx.get_file(symbol.file.unwrap());
         let shndx = symbol.esym.get_esym().st_shndx as usize;
-        dbg!(&symbol.name, file.get_file_name(), shndx);
         file.get_input_sections()[shndx].map(|isec_id| {
             let isec_addr = self.get_isec_addr(isec_id);
             isec_addr + symbol.esym.get_esym().st_value

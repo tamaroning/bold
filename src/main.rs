@@ -18,6 +18,7 @@ mod utils;
 
 fn main() {
     env_logger::builder().format_timestamp(None).init();
+
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() < 2 {
         eprintln!("Usage: {} <file>", args[0]);
