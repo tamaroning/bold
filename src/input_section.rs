@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, io::Read, sync::Arc};
 
 use crate::{context::Context, dummy, output_section::OutputSectionId};
 use elf::{
@@ -27,8 +27,6 @@ pub struct ObjectFile {
     // TODO: archive file
     data: Vec<u8>,
 
-    // Elf sections and symbols
-    elf_symtab: SectionHeader,
     first_global: usize,
     /// All sections corresponding to each section header
     elf_sections: Vec<Arc<ElfSection>>,
@@ -39,23 +37,50 @@ pub struct ObjectFile {
     /// symbols corresponding to each symbol table entry
     symbols: Vec<Option<Arc<RefCell<Symbol>>>>,
     is_dso: bool,
+    in_archive: bool,
 }
 
 impl ObjectFile {
-    pub fn read_from(file_name: String) -> ObjectFile {
-        // TODO: We should use mmap here
-        let data = std::fs::read(file_name.clone()).unwrap();
+    fn new(file_name: String, data: Vec<u8>, in_archive: bool) -> ObjectFile {
         ObjectFile {
             id: get_next_object_file_id(),
             file_name,
             data,
-            elf_symtab: dummy!(SectionHeader),
             first_global: 0,
             elf_sections: Vec::new(),
             elf_symbols: Vec::new(),
             input_sections: Vec::new(),
             symbols: Vec::new(),
             is_dso: false,
+            in_archive,
+        }
+    }
+
+    pub fn read_from(file_name: &str) -> Vec<ObjectFile> {
+        fn is_archive(file_name: &str) -> bool {
+            file_name.ends_with(".a")
+        }
+
+        // TODO: We should use mmap here
+        if is_archive(&file_name) {
+            log::debug!("Opening archive file: {}", file_name);
+            let mut objs = vec![];
+            let mut archive = ar::Archive::new(std::fs::File::open(file_name).unwrap());
+            while let Some(Ok(mut entry)) = archive.next_entry() {
+                let mut buf = Vec::new();
+                std::io::copy(&mut entry, &mut buf).unwrap();
+                let member_file_name = std::str::from_utf8(entry.header().identifier())
+                    .unwrap()
+                    .to_string();
+                log::debug!("\t{} ({} bytes)", member_file_name, buf.len());
+                let member_file = ObjectFile::new(member_file_name, buf, true);
+                objs.push(member_file);
+            }
+            objs
+        } else {
+            let data = std::fs::read(file_name).expect(&format!("Failed to read {}", file_name));
+            log::debug!("Opened object file: {} ({} bytes)", file_name, data.len());
+            vec![ObjectFile::new(file_name.to_string(), data, false)]
         }
     }
 
@@ -87,6 +112,14 @@ impl ObjectFile {
         &self.symbols
     }
 
+    pub fn is_dso(&self) -> bool {
+        self.is_dso
+    }
+
+    pub fn is_in_archive(&self) -> bool {
+        self.in_archive
+    }
+
     pub fn parse(&mut self, ctx: &mut Context) {
         let file = ElfBytes::<AnyEndian>::minimal_parse(&self.data).expect("Open ELF file failed");
         self.is_dso = file.ehdr.e_type == elf::abi::ET_DYN;
@@ -107,19 +140,18 @@ impl ObjectFile {
         }
 
         // Arrange elf_symbols
-        let (symtab_sec, strtab_sec) = file.symbol_table().unwrap().unwrap();
-        // TODO: Use .dsymtab instead of .symtab for dso
-        let symtab_shdr = file.section_header_by_name(".symtab").unwrap().unwrap();
-        for sym in symtab_sec {
-            let name = strtab_sec.get(sym.st_name as usize).unwrap();
-            self.elf_symbols.push(Arc::new(ElfSymbol {
-                name: name.to_string(),
-                sym,
-            }));
+        if let Some((symtab_sec, strtab_sec)) = file.symbol_table().unwrap() {
+            // TODO: Use .dsymtab instead of .symtab for dso
+            let symtab_shdr = file.section_header_by_name(".symtab").unwrap().unwrap();
+            for sym in symtab_sec {
+                let name = strtab_sec.get(sym.st_name as usize).unwrap();
+                self.elf_symbols.push(Arc::new(ElfSymbol {
+                    name: name.to_string(),
+                    sym,
+                }));
+            }
+            self.first_global = symtab_shdr.sh_info as usize;
         }
-
-        self.elf_symtab = symtab_shdr;
-        self.first_global = symtab_shdr.sh_info as usize;
 
         let mut elf_rels = HashMap::new();
         for shdr in section_headers {

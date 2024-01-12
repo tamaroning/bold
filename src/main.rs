@@ -27,7 +27,7 @@ fn main() {
 
     let mut files = args[1..]
         .iter()
-        .map(|arg| ObjectFile::read_from(arg.clone()))
+        .flat_map(|arg| ObjectFile::read_from(arg))
         .collect::<Vec<_>>();
 
     let mut ctx = Context::new();
