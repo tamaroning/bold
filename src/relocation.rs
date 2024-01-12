@@ -25,7 +25,7 @@ impl RelType {
             abi::R_X86_64_8 | abi::R_X86_64_16 | abi::R_X86_64_32 | abi::R_X86_64_32S => {
                 RelType::Abs
             }
-            _ => panic!("TODO: relocation type: {}", r_type),
+            _ => todo!("r_type: {} is not supported", r_type_as_str(r_type)),
         }
     }
 }
@@ -49,6 +49,45 @@ pub fn relocation_size(rela: &Rela) -> usize {
         abi::R_X86_64_16 => 2,
         abi::R_X86_64_32 => 4,
         abi::R_X86_64_32S => 4,
-        _ => panic!("TODO: relocation type: {}", rela.r_type),
+        abi::R_X86_64_64 => 8,
+        abi::R_X86_64_PC32 => 4,
+        abi::R_X86_64_GOT32 => 4,
+        abi::R_X86_64_PLT32 => 4,
+        _ => todo!("r_type: {} is not supported", r_type_as_str(rela.r_type)),
+    }
+}
+
+fn r_type_as_str(r_type: u32) -> &'static str {
+    match r_type {
+        abi::R_X86_64_NONE => "R_X86_64_NONE",
+        abi::R_X86_64_64 => "R_X86_64_64",
+        abi::R_X86_64_PC32 => "R_X86_64_PC32",
+        abi::R_X86_64_GOT32 => "R_X86_64_GOT32",
+        abi::R_X86_64_PLT32 => "R_X86_64_PLT32",
+        abi::R_X86_64_COPY => "R_X86_64_COPY",
+        abi::R_X86_64_GLOB_DAT => "R_X86_64_GLOB_DAT",
+        abi::R_X86_64_JUMP_SLOT => "R_X86_64_JUMP_SLOT",
+        abi::R_X86_64_RELATIVE => "R_X86_64_RELATIVE",
+        abi::R_X86_64_8 => "R_X86_64_8",
+        abi::R_X86_64_16 => "R_X86_64_16",
+        abi::R_X86_64_32 => "R_X86_64_32",
+        abi::R_X86_64_32S => "R_X86_64_32S",
+        abi::R_X86_64_PC64 => "R_X86_64_PC64",
+        abi::R_X86_64_GOTOFF64 => "R_X86_64_GOTOFF64",
+        abi::R_X86_64_GOTPC32 => "R_X86_64_GOTPC32",
+        abi::R_X86_64_GOT64 => "R_X86_64_GOT64",
+        abi::R_X86_64_GOTPCREL64 => "R_X86_64_GOTPCREL64",
+        abi::R_X86_64_GOTPC64 => "R_X86_64_GOTPC64",
+        abi::R_X86_64_PLTOFF64 => "R_X86_64_PLTOFF64",
+        abi::R_X86_64_SIZE32 => "R_X86_64_SIZE32",
+        abi::R_X86_64_SIZE64 => "R_X86_64_SIZE64",
+        abi::R_X86_64_GOTPC32_TLSDESC => "R_X86_64_GOTPC32_TLSDESC",
+        abi::R_X86_64_TLSDESC_CALL => "R_X86_64_TLSDESC_CALL",
+        abi::R_X86_64_TLSDESC => "R_X86_64_TLSDESC",
+        abi::R_X86_64_IRELATIVE => "R_X86_64_IRELATIVE",
+        abi::R_X86_64_RELATIVE64 => "R_X86_64_RELATIVE64",
+        abi::R_X86_64_GOTPCRELX => "R_X86_64_GOTPCRELX",
+        abi::R_X86_64_REX_GOTPCRELX => "R_X86_64_REX_GOTPCRELX",
+        _ => panic!("TODO: relocation type: {}", r_type),
     }
 }
