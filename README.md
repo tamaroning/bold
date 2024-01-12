@@ -4,7 +4,9 @@ An experimental x86-64 linker
 
 ## Status
 
-Static linking partially works
+Implemented features are as follows:
+- .o and .a files
+- static link (Some relocation types are missing)
 
 # Run
 
