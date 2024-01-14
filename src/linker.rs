@@ -381,15 +381,21 @@ impl Linker<'_> {
             let sym = symbol_ref.borrow_mut();
             let mut esym = sym.esym.get();
             esym.st_name = strtab_content.len() as u32;
-            esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
-
-            let file = self.ctx.get_file(sym.file.unwrap());
-            let shndx = sym.esym.get_esym().st_shndx as usize;
-            let isec = file.get_input_sections()[shndx].unwrap();
-            let isec = self.ctx.get_input_section(isec);
-            let osec_id = isec.get_output_section();
-            let common = self.get_common_from_osec(osec_id);
-            esym.st_shndx = common.map(|chunk| chunk.shndx.unwrap() as u16).unwrap();
+            if sym.esym.is_abs() {
+                // Keep esym.st_value
+                // Keep esym.st_shndx
+            } else if sym.esym.is_common() {
+                panic!("common: {}", sym.name);
+            } else {
+                esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
+                let file = self.ctx.get_file(sym.file.unwrap());
+                let shndx = sym.esym.get_esym().st_shndx as usize;
+                let isec = file.get_input_sections()[shndx].unwrap();
+                let isec = self.ctx.get_input_section(isec);
+                let osec_id = isec.get_output_section();
+                let common = self.get_common_from_osec(osec_id);
+                esym.st_shndx = common.map(|chunk| chunk.shndx.unwrap() as u16).unwrap();
+            }
 
             log::debug!(
                 "Symbol: {} (st_value: {:#x}, st_shndx: {})",

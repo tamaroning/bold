@@ -250,6 +250,9 @@ impl ObjectFile {
             if i == 0 {
                 continue;
             }
+            if elf_symbol.is_common() {
+                panic!("common local symbol?")
+            }
             self.symbols[i] = Some(Arc::new(RefCell::new(Symbol {
                 name: elf_symbol.name.clone(),
                 file: None,
@@ -400,14 +403,6 @@ pub struct ElfSymbol {
     sym: ElfSymbolData,
 }
 
-pub fn is_abs(sym: &ElfSymbolData) -> bool {
-    sym.st_shndx == elf::abi::SHN_ABS as u16
-}
-
-pub fn is_common(sym: &ElfSymbolData) -> bool {
-    sym.st_shndx == elf::abi::SHN_COMMON as u16
-}
-
 impl ElfSymbol {
     /// Return Elf_Sym definied in the object file
     pub fn get_esym(&self) -> &ElfSymbolData {
@@ -427,6 +422,14 @@ impl ElfSymbol {
 
     pub fn get_name(&self) -> &String {
         &self.name
+    }
+
+    pub fn is_abs(&self) -> bool {
+        self.sym.st_shndx == elf::abi::SHN_ABS as u16
+    }
+
+    pub fn is_common(&self) -> bool {
+        self.sym.st_shndx == elf::abi::SHN_COMMON as u16
     }
 }
 
