@@ -384,9 +384,8 @@ impl Linker<'_> {
             esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
 
             let file = self.ctx.get_file(sym.file.unwrap());
-            let esec = &file.get_elf_sections()[sym.esym.get_esym().st_shndx as usize];
-            dbg!(&esec.name);
-            let isec = file.get_input_sections()[sym.esym.get_esym().st_shndx as usize].unwrap();
+            let shndx = sym.esym.get_esym().st_shndx as usize;
+            let isec = file.get_input_sections()[shndx].unwrap();
             let isec = self.ctx.get_input_section(isec);
             let osec_id = isec.get_output_section();
             let common = self.get_common_from_osec(osec_id);

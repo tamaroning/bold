@@ -359,9 +359,7 @@ pub fn get_output_section_name(input_section: &String) -> String {
             return common_section_name.to_string();
         }
     }
-
-    log::error!("Unknown section: \"{}\"", input_section);
-    panic!();
+    input_section.clone()
 }
 
 pub struct Shstrtab {

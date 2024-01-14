@@ -5,15 +5,16 @@ use crate::{
     output_section::{get_output_section_name, OutputSection, OutputSectionId},
 };
 
-pub const COMMON_SECTION_NAMES: [&str; 12] = [
+// https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/output_chunks.cc#L386
+pub const COMMON_SECTION_NAMES: [&str; 10] = [
     ".text",
     ".data",
     ".data.rel.ro",
     ".rodata",
     ".bss",
     ".bss.rel.ro",
-    ".ctors",
-    ".dtors",
+    //".ctors",
+    //".dtors",
     ".init_array",
     ".fini_array",
     ".tbss",

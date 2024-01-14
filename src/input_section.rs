@@ -9,6 +9,9 @@ use elf::{
     ElfBytes,
 };
 
+/// Missing constants in elf-rs
+const SHF_EXCLUDE: u64 = 0x80000000;
+
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct ObjectId {
     private: usize,
@@ -178,6 +181,11 @@ impl ObjectFile {
     fn initialize_sections(&mut self, ctx: &mut Context) {
         self.input_sections.resize(self.elf_sections.len(), None);
         for (i, elf_section) in self.elf_sections.iter().enumerate() {
+            if (elf_section.header.sh_flags & SHF_EXCLUDE) != 0
+                && (elf_section.header.sh_flags & elf::abi::SHF_ALLOC as u64) == 0
+            {
+                continue;
+            }
             match elf_section.header.sh_type {
                 elf::abi::SHT_NULL
                 | elf::abi::SHT_REL
@@ -202,19 +210,20 @@ impl ObjectFile {
                 }
                 _ => {
                     let name = &elf_section.name;
-                    if name.starts_with(".note")
-                        || name == ".eh_frame"
-                        || name == ".stapsdt.base"
-                        || name.starts_with(".gnu")
-                        || name == "__libc_freeres_ptrs"
-                        || name == "__libc_freeres_fn"
-                        || name == "__libc_IO_vtables"
-                        || name.starts_with("__libc")
-                        || name == ".gcc_except_table"
-                        || name == ".tm_clone_table"
-                        || name == ".comment"
-                        || name == ".init"
-                        || name == ".fini"
+                    if false
+                        && (name.starts_with(".note")
+                            || name == ".eh_frame"
+                            || name == ".stapsdt.base"
+                            || name.starts_with(".gnu")
+                            || name == "__libc_freeres_ptrs"
+                            || name == "__libc_freeres_fn"
+                            || name == "__libc_IO_vtables"
+                            || name.starts_with("__libc")
+                            || name == ".gcc_except_table"
+                            || name == ".tm_clone_table"
+                            || name == ".comment"
+                            || name == ".init"
+                            || name == ".fini")
                     {
                         log::warn!("TODO: {} is not supported, ignored", name);
                         continue;
@@ -225,6 +234,8 @@ impl ObjectFile {
                     ctx.set_input_section(input_section);
                 }
             }
+            // TODO: set is_comdat_member
+            // mold: https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L179
         }
     }
 
