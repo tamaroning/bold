@@ -22,8 +22,13 @@ Hello, world
 ```
 
 ## TODO
-
-- Support SHN_ABS and SHN_COMMON
+- Support weak symbols
+    - preliminary
+- Support special(?) symbols
+    - _GLOBAL_OFFSET_TABLE_
+    - __start* and __stop*
+    - and more?
+- Support SHN_COMMON
 
 ## References
 - https://refspecs.linuxfoundation.org/elf/elf.pdf

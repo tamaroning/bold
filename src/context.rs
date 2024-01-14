@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, ops::Deref, sync::Arc};
 
 use crate::{
     input_section::{InputSection, InputSectionId, ObjectFile, ObjectId, Symbol},
@@ -63,20 +63,34 @@ impl Context {
     }
 
     pub fn add_global_symbol(&mut self, symbol: Arc<RefCell<Symbol>>) {
-        let name = symbol.borrow().name.clone();
-        let should_insert = if let Some(sym) = self.global_symbols.get(&name) {
-            let sym = sym.borrow();
-            sym.file.is_none()
-        } else {
-            true
-        };
-        if should_insert {
-            self.global_symbols.insert(name, symbol);
+        let sym = symbol.deref().borrow();
+        assert!(sym.is_global());
+        if sym.esym.get_esym().is_undefined() {
+            return;
         }
+
+        let name = sym.name.clone();
+        if let Some(dup) = self.global_symbols.get(&name) {
+            let dup = dup.deref().borrow();
+            if dup.esym.is_weak() {
+                log::info!("Override weak symbol: {}", name);
+            } else {
+                log::error!("Duplicate non-weak symbol: {}", name);
+                //panic!();
+            }
+        } else {
+            log::info!("Add global symbol: {}", name);
+        }
+        std::mem::drop(sym);
+        self.global_symbols.insert(name, symbol);
     }
 
     pub fn get_global_symbol(&self, name: &str) -> Option<&Arc<RefCell<Symbol>>> {
         self.global_symbols.get(name)
+    }
+
+    pub fn get_global_symbols(&self) -> impl Iterator<Item = &Arc<RefCell<Symbol>>> {
+        self.global_symbols.values()
     }
 
     pub fn get_input_section(&self, id: InputSectionId) -> &InputSection {
@@ -130,8 +144,8 @@ impl Context {
     }
 
     pub fn dump(&self) {
-        self.dump_sections();
-        self.dump_symbols();
+        //self.dump_sections();
+        //self.dump_symbols();
     }
 
     fn dump_sections(&self) {
@@ -160,7 +174,7 @@ impl Context {
             log::debug!("Symbols in '{}'", file.get_file_name());
             for symbol in file.get_symbols().iter() {
                 if let Some(symbol) = symbol {
-                    let symbol = symbol.borrow();
+                    let symbol = symbol.deref().borrow();
                     let definiton_loc = if let Some(file_id) = symbol.file {
                         let file = self.get_file(file_id);
                         file.get_file_name().to_owned()
@@ -175,7 +189,7 @@ impl Context {
             .global_symbols
             .iter()
             .map(|(_, symbol)| {
-                let symbol = symbol.borrow();
+                let symbol = symbol.deref().borrow();
                 let definiton_loc = if let Some(file_id) = symbol.file {
                     let file = self.get_file(file_id);
                     file.get_file_name().to_owned()

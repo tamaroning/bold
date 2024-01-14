@@ -196,39 +196,28 @@ impl ObjectFile {
                 }
                 elf::abi::SHT_NOTE => {
                     let name = &elf_section.name;
-                    log::error!("TODO: SHT_NOTE {} is not supported, ignored", name);
+                    log::warn!(
+                        "SHT_NOTE {} is not supported, ignored ({})",
+                        name,
+                        self.get_file_name()
+                    );
                 }
                 elf::abi::SHT_SYMTAB_SHNDX => panic!("SHT_SYMTAB_SHNDX is not supported"),
                 elf::abi::SHT_GROUP => {
                     let shdr = elf_section.header;
                     let esym = self.elf_symbols[shdr.sh_info as usize].clone();
                     let signature = esym.get_name();
-                    log::debug!("SHT_GROUP: {}", signature);
 
                     let name = &elf_section.name;
-                    log::error!("TODO: SHT_GROUP {} is not supported, ignored", name);
+                    log::warn!(
+                        "SHT_GROUP {} is not supported, ignored ({})",
+                        name,
+                        self.get_file_name()
+                    );
+                    log::warn!("signature: {}", signature);
                 }
                 _ => {
-                    let name = &elf_section.name;
-                    if false
-                        && (name.starts_with(".note")
-                            || name == ".eh_frame"
-                            || name == ".stapsdt.base"
-                            || name.starts_with(".gnu")
-                            || name == "__libc_freeres_ptrs"
-                            || name == "__libc_freeres_fn"
-                            || name == "__libc_IO_vtables"
-                            || name.starts_with("__libc")
-                            || name == ".gcc_except_table"
-                            || name == ".tm_clone_table"
-                            || name == ".comment"
-                            || name == ".init"
-                            || name == ".fini")
-                    {
-                        log::warn!("TODO: {} is not supported, ignored", name);
-                        continue;
-                    }
-                    // Create a new section and attach relocations to it
+                    // Create a new section
                     let input_section = InputSection::new(Arc::clone(elf_section));
                     self.input_sections[i] = Some(input_section.get_id());
                     ctx.set_input_section(input_section);
@@ -430,6 +419,10 @@ impl ElfSymbol {
 
     pub fn is_common(&self) -> bool {
         self.sym.st_shndx == elf::abi::SHN_COMMON as u16
+    }
+
+    pub fn is_weak(&self) -> bool {
+        self.sym.st_bind() == elf::abi::STB_WEAK
     }
 }
 

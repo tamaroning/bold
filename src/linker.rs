@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Deref, sync::Arc};
+use std::{cell::RefCell, collections::HashSet, ops::Deref, sync::Arc};
 
 use elf::{
     abi::{PF_R, PF_W, PF_X, PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SHT_NOBITS},
@@ -42,6 +42,7 @@ impl Linker<'_> {
         // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L536
 
         // Set file to symbols defined in the object file
+        let mut num_defined = 0;
         for file in self.ctx.files() {
             let object_id = file.get_id();
             for (i, symbol) in file.get_symbols().iter().enumerate() {
@@ -55,10 +56,13 @@ impl Linker<'_> {
                 let symbol = symbol.deref();
                 symbol.borrow_mut().file = Some(object_id);
                 // TODO: visibility?
+                num_defined += 1;
             }
         }
 
         // Symbols defined in other object files
+        let mut num_resolved = 0;
+        let mut unresolved = HashSet::new();
         for file in self.ctx.files() {
             for (i, symbol) in file.get_symbols().iter().enumerate() {
                 if let Some(symbol) = symbol {
@@ -70,21 +74,33 @@ impl Linker<'_> {
                         continue;
                     }
                     let name = esym.get_name();
-                    log::debug!("Resolve symbol: {}", name);
                     let Some(global_symbol) = self.ctx.get_global_symbol(name).map(Arc::clone)
                     else {
-                        panic!("Symbol {} is not defined", name)
+                        unresolved.insert(name.to_owned());
+                        continue;
                     };
                     let defined_file = global_symbol.deref().borrow().file;
                     let defined_esym = Arc::clone(&global_symbol.deref().borrow().esym);
-                    if defined_file.is_none() {
-                        log::warn!("Symbol {} is not defined", name);
-                        continue;
-                    }
+                    assert!(defined_file.is_some());
                     let mut symbol = symbol.deref().borrow_mut();
                     symbol.file = defined_file;
                     symbol.esym = defined_esym;
+                    num_resolved += 1;
                 }
+            }
+        }
+
+        log::info!(
+            "Summary: Defined: {} symbols, Resolved: {} references, Unresolved: {} symbols",
+            num_defined,
+            num_resolved,
+            unresolved.len()
+        );
+
+        if !unresolved.is_empty() {
+            log::warn!("Unresolved symbols:");
+            for symbol in unresolved {
+                log::warn!("\t{}", symbol);
             }
         }
     }
@@ -390,6 +406,7 @@ impl Linker<'_> {
                 esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
                 let file = self.ctx.get_file(sym.file.unwrap());
                 let shndx = sym.esym.get_esym().st_shndx as usize;
+                // log::debug!("Symbol: {}", sym.name);
                 let isec = file.get_input_sections()[shndx].unwrap();
                 let isec = self.ctx.get_input_section(isec);
                 let osec_id = isec.get_output_section();
@@ -397,12 +414,14 @@ impl Linker<'_> {
                 esym.st_shndx = common.map(|chunk| chunk.shndx.unwrap() as u16).unwrap();
             }
 
+            /* TODO: remove
             log::debug!(
                 "Symbol: {} (st_value: {:#x}, st_shndx: {})",
                 sym.name,
                 esym.st_value,
                 esym.st_shndx
             );
+            */
             symtab_content.push(esym);
             strtab_content.extend_from_slice(sym.name.as_bytes());
             strtab_content.push(0);
