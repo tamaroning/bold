@@ -143,7 +143,10 @@ impl ObjectFile {
             // TODO: Use .dsymtab instead of .symtab for dso
             let symtab_shdr = file.section_header_by_name(".symtab").unwrap().unwrap();
             for sym in symtab_sec {
+                // remove string after @
                 let name = strtab_sec.get(sym.st_name as usize).unwrap();
+                let name_end = name.find('@').unwrap_or(name.len());
+                let name = name[..name_end].to_string();
                 self.elf_symbols.push(Arc::new(ElfSymbol {
                     name: name.to_string(),
                     sym,
@@ -183,11 +186,39 @@ impl ObjectFile {
                 | elf::abi::SHT_STRTAB => {
                     // Nothing to do
                 }
+                elf::abi::SHT_NOTE => {
+                    let name = &elf_section.name;
+                    log::error!("TODO: SHT_NOTE {} is not supported, ignored", name);
+                }
                 elf::abi::SHT_SYMTAB_SHNDX => panic!("SHT_SYMTAB_SHNDX is not supported"),
                 elf::abi::SHT_GROUP => {
-                    todo!("TODO:")
+                    let shdr = elf_section.header;
+                    let esym = self.elf_symbols[shdr.sh_info as usize].clone();
+                    let signature = esym.get_name();
+                    log::debug!("SHT_GROUP: {}", signature);
+
+                    let name = &elf_section.name;
+                    log::error!("TODO: SHT_GROUP {} is not supported, ignored", name);
                 }
                 _ => {
+                    let name = &elf_section.name;
+                    if name.starts_with(".note")
+                        || name == ".eh_frame"
+                        || name == ".stapsdt.base"
+                        || name.starts_with(".gnu")
+                        || name == "__libc_freeres_ptrs"
+                        || name == "__libc_freeres_fn"
+                        || name == "__libc_IO_vtables"
+                        || name.starts_with("__libc")
+                        || name == ".gcc_except_table"
+                        || name == ".tm_clone_table"
+                        || name == ".comment"
+                        || name == ".init"
+                        || name == ".fini"
+                    {
+                        log::warn!("TODO: {} is not supported, ignored", name);
+                        continue;
+                    }
                     // Create a new section and attach relocations to it
                     let input_section = InputSection::new(Arc::clone(elf_section));
                     self.input_sections[i] = Some(input_section.get_id());
@@ -205,12 +236,11 @@ impl ObjectFile {
             if i >= self.first_global {
                 break;
             }
-            let name = elf_symbol.name.clone();
             if i == 0 {
                 continue;
             }
             self.symbols[i] = Some(Arc::new(RefCell::new(Symbol {
-                name,
+                name: elf_symbol.name.clone(),
                 file: None,
                 esym: Arc::clone(elf_symbol),
                 global: false,
@@ -222,10 +252,8 @@ impl ObjectFile {
             if i < self.first_global {
                 continue;
             }
-            let name_end = elf_symbol.name.find('@').unwrap_or(elf_symbol.name.len());
-            let name = elf_symbol.name[..name_end].to_string();
             let symbol = Arc::new(RefCell::new(Symbol {
-                name,
+                name: elf_symbol.name.clone(),
                 file: None,
                 esym: Arc::clone(elf_symbol),
                 global: true,

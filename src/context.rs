@@ -63,7 +63,15 @@ impl Context {
 
     pub fn add_global_symbol(&mut self, symbol: Arc<RefCell<Symbol>>) {
         let name = symbol.borrow().name.clone();
-        self.global_symbols.insert(name, symbol);
+        let should_insert = if let Some(sym) = self.global_symbols.get(&name) {
+            let sym = sym.borrow();
+            sym.file.is_none()
+        } else {
+            true
+        };
+        if should_insert {
+            self.global_symbols.insert(name, symbol);
+        }
     }
 
     pub fn get_global_symbol(&self, name: &str) -> Option<&Arc<RefCell<Symbol>>> {

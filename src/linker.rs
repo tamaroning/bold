@@ -65,21 +65,25 @@ impl Linker<'_> {
                     if i < file.get_first_global() {
                         continue;
                     }
-
                     let esym = &file.get_elf_symbols()[i];
                     if !esym.get_esym().is_undefined() {
                         continue;
                     }
                     let name = esym.get_name();
+                    log::debug!("Resolve symbol: {}", name);
                     let Some(global_symbol) = self.ctx.get_global_symbol(name).map(Arc::clone)
                     else {
                         panic!("Symbol {} is not defined", name)
                     };
-                    let object_id = global_symbol.deref().borrow().file;
-                    assert!(object_id.is_some());
+                    let defined_file = global_symbol.deref().borrow().file;
+                    let defined_esym = Arc::clone(&global_symbol.deref().borrow().esym);
+                    if defined_file.is_none() {
+                        log::warn!("Symbol {} is not defined", name);
+                        continue;
+                    }
                     let mut symbol = symbol.deref().borrow_mut();
-                    symbol.file = global_symbol.deref().borrow().file;
-                    symbol.esym = Arc::clone(&global_symbol.deref().borrow().esym);
+                    symbol.file = defined_file;
+                    symbol.esym = defined_esym;
                 }
             }
         }
@@ -380,6 +384,8 @@ impl Linker<'_> {
             esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
 
             let file = self.ctx.get_file(sym.file.unwrap());
+            let esec = &file.get_elf_sections()[sym.esym.get_esym().st_shndx as usize];
+            dbg!(&esec.name);
             let isec = file.get_input_sections()[sym.esym.get_esym().st_shndx as usize].unwrap();
             let isec = self.ctx.get_input_section(isec);
             let osec_id = isec.get_output_section();
