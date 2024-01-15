@@ -15,10 +15,11 @@ Implemented features are as follows:
 # Run
 
 ```bash
-$ as examples/hello.asm -o hello.o
-$ RUST_LOG=debug cargo run hello.o
-$ ./a.out
-Hello, world
+$ cargo run <file>...
+```
+
+```bash
+./tests/hello_nolibc.sh
 ```
 
 ## TODO
@@ -29,10 +30,14 @@ Hello, world
     - __start* and __stop*
     - and more?
 - Support SHN_COMMON
+- .bss section
 
 ## References
-- https://refspecs.linuxfoundation.org/elf/elf.pdf
-- https://github.com/rui314/mold
+- mold, https://github.com/rui314/mold
+- ELF spec, https://refspecs.linuxfoundation.org/elf/elf.pdf
+- System V ABI spec, https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
+- ELF Handling For Thread-Local-Storage, https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
+
 
 ## Licenses
 

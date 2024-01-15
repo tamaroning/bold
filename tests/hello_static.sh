@@ -1,4 +1,5 @@
-cat <<EOF | cc -o %hello.o -c -x assembler -
+# Disable TLS for simplicity.
+cat <<EOF | cc -o %hello.o --disable-tls -c -x assembler -
   .text
   .globl main
 main:
