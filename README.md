@@ -19,7 +19,9 @@ $ cargo run <file>...
 ```
 
 ```bash
-./tests/hello_nolibc.sh
+$ ./tests/hello_nolibc.sh
+$ ./a.out
+Hello, world
 ```
 
 ## TODO
