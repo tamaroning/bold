@@ -11,7 +11,7 @@ use crate::{
     config::{Config, PAGE_SIZE},
     context::Context,
     dummy,
-    input_section::{InputSectionId, Symbol},
+    input_section::{InputSection, InputSectionId, Symbol},
     output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
     relocation::{relocation_size, relocation_value, RelValue},
     utils::align_to,
@@ -101,6 +101,35 @@ impl Linker<'_> {
             log::warn!("Unresolved symbols:");
             for symbol in unresolved {
                 log::warn!("\t{}", symbol);
+            }
+        }
+    }
+
+    pub fn convert_common_symbols(&mut self) {
+        let bss = self.ctx.get_or_create_output_section_mut(
+            ".bss",
+            SHT_NOBITS,
+            (SHF_WRITE | SHF_ALLOC) as u64,
+        );
+
+        for file in self.ctx.files() {
+            for (i, symbol) in file.get_symbols().iter().enumerate() {
+                if i < file.get_first_global() {
+                    continue;
+                }
+                let Some(symbol) = symbol else {
+                    continue;
+                };
+                let esym = &file.get_elf_symbols()[i];
+                if !esym.is_common() {
+                    continue;
+                }
+                if symbol.borrow().file == Some(file.get_id()) {
+                    continue;
+                }
+
+                // TODO: ?
+                // https://github.com/tamaroning/mold/blob/3489a464c6577ea1ee19f6b9ae3fe46237f4e4ee/object_file.cc#L668
             }
         }
     }
@@ -401,13 +430,16 @@ impl Linker<'_> {
                 // Keep esym.st_value
                 // Keep esym.st_shndx
             } else if sym.esym.is_common() {
-                panic!("common: {}", sym.name);
+                log::error!("common: {}, ignored", sym.name);
             } else {
                 esym.st_value = self.get_symbol_addr(&sym).unwrap_or(0);
                 let file = self.ctx.get_file(sym.file.unwrap());
                 let shndx = sym.esym.get_esym().st_shndx as usize;
-                // log::debug!("Symbol: {}", sym.name);
-                let isec = file.get_input_sections()[shndx].unwrap();
+                let Some(isec) = file.get_input_sections()[shndx] else {
+                    let esec = &file.get_elf_sections()[shndx];
+                    log::debug!("{} in section `{}`, ignored", sym.name, esec.name);
+                    continue;
+                };
                 let isec = self.ctx.get_input_section(isec);
                 let osec_id = isec.get_output_section();
                 let common = self.get_common_from_osec(osec_id);

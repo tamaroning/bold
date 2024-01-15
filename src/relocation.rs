@@ -21,10 +21,12 @@ impl RelType {
     pub fn from(r_type: u32) -> Self {
         match r_type {
             abi::R_X86_64_NONE => RelType::None,
-            abi::R_X86_64_PLT32 => RelType::Pc,
-            abi::R_X86_64_8 | abi::R_X86_64_16 | abi::R_X86_64_32 | abi::R_X86_64_32S => {
-                RelType::Abs
-            }
+            abi::R_X86_64_PC32 | abi::R_X86_64_PLT32 => RelType::Pc,
+            abi::R_X86_64_8
+            | abi::R_X86_64_16
+            | abi::R_X86_64_32
+            | abi::R_X86_64_32S
+            | abi::R_X86_64_64 => RelType::Abs,
             _ => todo!("r_type: {} is not supported", r_type_as_str(r_type)),
         }
     }
@@ -68,11 +70,20 @@ fn r_type_as_str(r_type: u32) -> &'static str {
         abi::R_X86_64_GLOB_DAT => "R_X86_64_GLOB_DAT",
         abi::R_X86_64_JUMP_SLOT => "R_X86_64_JUMP_SLOT",
         abi::R_X86_64_RELATIVE => "R_X86_64_RELATIVE",
-        abi::R_X86_64_8 => "R_X86_64_8",
-        abi::R_X86_64_16 => "R_X86_64_16",
         abi::R_X86_64_32 => "R_X86_64_32",
+        // 10
+        abi::R_X86_64_16 => "R_X86_64_16",
+        abi::R_X86_64_8 => "R_X86_64_8",
+        abi::R_X86_64_PC8 => "R_X86_64_PC8",
+        abi::R_X86_64_PC16 => "R_X86_64_PC16",
         abi::R_X86_64_32S => "R_X86_64_32S",
         abi::R_X86_64_PC64 => "R_X86_64_PC64",
+        abi::R_X86_64_TLSGD => "R_X86_64_TLSGD",
+        abi::R_X86_64_TLSLD => "R_X86_64_TLSLD",
+        // 20
+        abi::R_X86_64_DTPOFF32 => "R_X86_64_DTPOFF32",
+        abi::R_X86_64_GOTTPOFF => "R_X86_64_GOTTPOFF",
+        abi::R_X86_64_TPOFF32 => "R_X86_64_TPOFF32",
         abi::R_X86_64_GOTOFF64 => "R_X86_64_GOTOFF64",
         abi::R_X86_64_GOTPC32 => "R_X86_64_GOTPC32",
         abi::R_X86_64_GOT64 => "R_X86_64_GOT64",

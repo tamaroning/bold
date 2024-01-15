@@ -196,8 +196,8 @@ impl ObjectFile {
                 }
                 elf::abi::SHT_NOTE => {
                     let name = &elf_section.name;
-                    log::warn!(
-                        "SHT_NOTE {} is not supported, ignored ({})",
+                    log::debug!(
+                        "TODO: SHT_NOTE {} is not supported, ignored ({})",
                         name,
                         self.get_file_name()
                     );
@@ -209,14 +209,29 @@ impl ObjectFile {
                     let signature = esym.get_name();
 
                     let name = &elf_section.name;
-                    log::warn!(
-                        "SHT_GROUP {} is not supported, ignored ({})",
+                    log::debug!(
+                        "TODO: SHT_GROUP {} is not supported, ignored ({})",
                         name,
                         self.get_file_name()
                     );
-                    log::warn!("signature: {}", signature);
+                    log::debug!("signature: \"{}\"", signature);
                 }
                 _ => {
+                    if elf_section.name == ".note.GNU-stack" {
+                        // https://github.com/tamaroning/mold/blob/c3a86f5b24343f020edfac1f683dea3648a30e61/elf/input-files.cc#L180
+                        log::debug!("TODO: {} is not supported, ignored", elf_section.name);
+                    }
+
+                    if elf_section.name.starts_with(".gnu.warning.")
+                    // FIXME: I am not sure we can ignore these sections
+                    // https://github.com/tamaroning/mold/blob/c3a86f5b24343f020edfac1f683dea3648a30e61/elf/input-files.cc#L237
+                        || elf_section.name == ".debug_gnu_pubnames"
+                        || elf_section.name == ".debug_gnu_pubtypes"
+                        || elf_section.name == ".debug_types"
+                    {
+                        continue;
+                    }
+
                     // Create a new section
                     let input_section = InputSection::new(Arc::clone(elf_section));
                     self.input_sections[i] = Some(input_section.get_id());
@@ -355,10 +370,12 @@ impl InputSection {
     }
 
     pub fn get_size(&self) -> u64 {
+        /* bss, tbss breaks this
         assert_eq!(
             self.elf_section.data.len() as u64,
             self.elf_section.header.sh_size
         );
+        */
         self.elf_section.header.sh_size
     }
 
@@ -382,7 +399,10 @@ impl InputSection {
         let offset = self.get_offset().unwrap();
         let size = self.get_size();
         let data = &self.elf_section.data;
-        buf[offset as usize..(offset + size) as usize].copy_from_slice(data);
+        // bss and tbss has empty elf section data
+        if !data.is_empty() {
+            buf[offset as usize..(offset + size) as usize].copy_from_slice(data);
+        }
     }
 }
 

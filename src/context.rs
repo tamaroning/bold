@@ -73,13 +73,13 @@ impl Context {
         if let Some(dup) = self.global_symbols.get(&name) {
             let dup = dup.deref().borrow();
             if dup.esym.is_weak() {
-                log::info!("Override weak symbol: {}", name);
+                log::debug!("Override weak symbol: {}", name);
             } else {
                 log::error!("Duplicate non-weak symbol: {}", name);
                 //panic!();
             }
         } else {
-            log::info!("Add global symbol: {}", name);
+            log::debug!("Add global symbol: {}", name);
         }
         std::mem::drop(sym);
         self.global_symbols.insert(name, symbol);
@@ -119,13 +119,13 @@ impl Context {
 
     pub fn get_or_create_output_section_mut(
         &mut self,
-        name: &String,
+        name: &str,
         sh_type: u32,
         sh_flags: u64,
     ) -> &mut OutputSection {
         let mut find = None;
         for section in &mut self.output_sections_mut() {
-            if section.get_name() == *name
+            if &section.get_name() == name
                 && section.get_sh_type() == sh_type
                 && section.get_sh_flags() == sh_flags
             {
@@ -134,8 +134,9 @@ impl Context {
             }
         }
 
-        let id = find.unwrap_or({
-            let section = OutputSection::new(name.clone(), sh_type, sh_flags);
+        let id = find.unwrap_or_else(|| {
+            log::debug!("Create new output section: {}", name);
+            let section = OutputSection::new(name.to_string(), sh_type, sh_flags);
             let id = section.get_id();
             self.output_sections.insert(id, section);
             id
