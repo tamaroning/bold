@@ -14,7 +14,7 @@ use crate::{
     input_section::{InputSection, InputSectionId, Symbol},
     output_section::{get_output_section_name, ChunkInfo, OutputChunk, OutputSectionId},
     relocation::{relocation_size, relocation_value, RelValue},
-    utils::align_to,
+    utils::{align_to, is_c_identifier},
 };
 
 pub struct Linker<'ctx> {
@@ -283,6 +283,16 @@ impl Linker<'_> {
             }
         }
         file_ofs
+    }
+
+    pub fn fix_synthetic_symbols(&mut self) {
+        // `__start_` and `__stop_` symbols
+        for osec in self.ctx.output_sections() {
+            let name = osec.get_name();
+            if is_c_identifier(&name) {
+                // TODO: register symbols
+            }
+        }
     }
 
     pub fn copy_buf(&mut self, buf: &mut [u8]) {
@@ -556,6 +566,7 @@ impl Linker<'_> {
                     let isec = self.ctx.get_input_section(*isec_id);
                     for rel in isec.get_relas() {
                         let symbol = rel.symbol.deref().borrow();
+                        log::debug!("Relocation: {:?}", symbol.name);
                         let symbol_addr = self.get_symbol_addr(&symbol).unwrap();
                         if let Some(value) = relocation_value(symbol_addr, isec_addr, &rel.erela) {
                             let isec_file_ofs = isec.get_offset().unwrap();

@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 #[macro_export]
 /// Create a zero-cleared value of a given type.
 macro_rules! dummy {
@@ -27,4 +29,11 @@ pub fn write_to<T>(buf: &mut [u8], offset: usize, data: &T) -> usize {
     let slice = unsafe { std::slice::from_raw_parts(view, size) };
     buf[offset..offset + size].copy_from_slice(slice);
     size
+}
+
+pub fn is_c_identifier(symbol: &str) -> bool {
+    let chars: Vec<_> = symbol.chars().collect();
+    return chars.len() > 0
+        && !matches!(chars[0], '0'..='9')
+        && chars.iter().all(|c| c.is_alphanumeric());
 }

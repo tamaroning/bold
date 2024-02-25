@@ -149,6 +149,9 @@ fn main() {
     let filesize = linker.assign_osec_offsets();
     log::debug!("File size: {}", filesize);
 
+    // mold: https://github.com/tamaroning/mold/blob/c3a86f5b24343f020edfac1f683dea3648a30e61/elf/main.cc#L629
+    linker.fix_synthetic_symbols();
+
     // Create an output file
 
     // Allocate a buffer for the output file
